@@ -1,4 +1,5 @@
 import React, { PureComponent } from 'react';
+
 import classnames from 'classnames';
 import DropdownShell from './DropdownShell';
 
@@ -61,27 +62,21 @@ export default class DropdownComponent<T> extends PureComponent<Props<T>, State>
     });
     const searchableStyle = {
       maxHeight: '300px',
-      overflowY: 'auto'
+      overflowY: 'auto' as 'auto'
     };
     const searchRegex = new RegExp(search, 'gi');
-    const onSearchChange = e => {
-      this.setState({ search: e.target.value });
+    const onSearchChange = (e: React.FormEvent<HTMLInputElement>) => {
+      this.setState({ search: e.currentTarget.value });
     };
 
     return (
-      <ul className={menuClass} style={searchable ? searchableStyle : {}}>
-        {searchable && (
-          <input
-            className="form-control"
-            placeholder={'Search'}
-            onChange={onSearchChange}
-            value={search}
-          />
-        )}
+      <ul className={menuClass} style={searchable ? searchableStyle : undefined}>
+        {searchable && <input placeholder={'Search'} onChange={onSearchChange} value={search} />}
 
         {options
           .filter(option => {
             if (searchable && search.length) {
+              // @ts-ignore
               return option.toString().match(searchRegex);
             }
             return true;

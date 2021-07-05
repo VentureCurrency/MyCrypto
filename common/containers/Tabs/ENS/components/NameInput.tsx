@@ -1,10 +1,12 @@
 import React, { Component } from 'react';
 import { connect } from 'react-redux';
-import { AppState } from 'reducers';
-import { resolveDomainRequested, TResolveDomainRequested } from 'actions/ens';
+
+import translate from 'translations';
 import { isValidENSName } from 'libs/validators';
-import './NameInput.scss';
+import { AppState } from 'features/reducers';
+import { ensActions } from 'features/ens';
 import { Input } from 'components/ui';
+import './NameInput.scss';
 
 interface State {
   domainToCheck: string;
@@ -14,7 +16,7 @@ interface State {
 
 interface Props {
   domainRequests: AppState['ens']['domainRequests'];
-  resolveDomainRequested: TResolveDomainRequested;
+  resolveDomainRequested: ensActions.TResolveDomainRequested;
 }
 
 class NameInput extends Component<Props, State> {
@@ -26,17 +28,18 @@ class NameInput extends Component<Props, State> {
 
   public render() {
     const { domainRequests } = this.props;
-    const { isValidDomain, domainToCheck, isFocused } = this.state;
+    const { isValidDomain, domainToCheck } = this.state;
     const req = domainRequests[domainToCheck];
     const isLoading = req && !req.data && !req.error;
 
     return (
       <form className="ENSInput" onSubmit={this.onSubmit}>
         <div className="input-group-wrapper">
-          <label className="input-group input-group-inline-dropdown ENSInput-name">
+          <label className="input-group input-group-inline ENSInput-name">
             <Input
               value={domainToCheck}
-              className={!domainToCheck ? '' : isValidDomain ? 'is-valid' : 'is-invalid'}
+              isValid={!!domainToCheck && isValidDomain}
+              className="border-rad-right-0"
               type="text"
               placeholder="mycrypto"
               onChange={this.onChange}
@@ -46,26 +49,22 @@ class NameInput extends Component<Props, State> {
             />
             <span className="input-group-addon">.eth</span>
           </label>
-        </div>
-        {domainToCheck &&
-          !isValidDomain &&
-          !isFocused && (
-            <p className="help-block is-invalid">
-              Must be at least 7 characters, no special characters
-            </p>
+          {domainToCheck && !isValidDomain && (
+            <p className="help-block is-invalid">{translate('ENS_INVALID_INPUT')}</p>
           )}
+        </div>
         <button
           className="ENSInput-button btn btn-primary btn-block"
           disabled={!isValidDomain || isLoading}
         >
-          Check Availability
+          {translate('ACTION_9')}
         </button>
       </form>
     );
   }
 
   // add delay to namehash computation / getting the availability
-  private onChange = (event: React.FormEvent<HTMLButtonElement>) => {
+  private onChange = (event: React.FormEvent<HTMLInputElement>) => {
     const domainToCheck = event.currentTarget.value.toLowerCase().trim();
     const isValidDomain = isValidENSName(domainToCheck);
     this.setState({
@@ -90,6 +89,9 @@ function mapStateToProps(state: AppState) {
   };
 }
 
-export default connect(mapStateToProps, {
-  resolveDomainRequested
-})(NameInput);
+export default connect(
+  mapStateToProps,
+  {
+    resolveDomainRequested: ensActions.resolveDomainRequested
+  }
+)(NameInput);

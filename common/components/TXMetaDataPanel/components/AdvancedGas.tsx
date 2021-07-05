@@ -1,16 +1,23 @@
 import React from 'react';
-import translate, { translateRaw } from 'translations';
-import FeeSummary from './FeeSummary';
-import './AdvancedGas.scss';
-import { TToggleAutoGasLimit, toggleAutoGasLimit } from 'actions/config';
-import { AppState } from 'reducers';
-import { TInputGasPrice } from 'actions/transaction';
-import { NonceField, GasLimitField, DataField } from 'components';
 import { connect } from 'react-redux';
-import { getAutoGasLimitEnabled } from 'selectors/config';
-import { isValidGasPrice } from 'selectors/transaction';
-import { sanitizeNumericalInput } from 'libs/values';
+
+import { EAC_SCHEDULING_CONFIG } from 'libs/scheduling';
+import translate, { translateRaw } from 'translations';
+import { AppState } from 'features/reducers';
+import { configMetaActions, configMetaSelectors } from 'features/config';
+import { scheduleSelectors } from 'features/schedule';
+import { transactionFieldsActions, transactionSelectors } from 'features/transaction';
+import {
+  NonceField,
+  GasLimitField,
+  DataField,
+  ScheduleDepositField,
+  ScheduleType,
+  WindowSizeField
+} from 'components';
 import { Input } from 'components/ui';
+import FeeSummary, { RenderData } from './FeeSummary';
+import './AdvancedGas.scss';
 
 export interface AdvancedOptions {
   gasPriceField?: boolean;
@@ -21,9 +28,12 @@ export interface AdvancedOptions {
 }
 
 interface OwnProps {
-  inputGasPrice: TInputGasPrice;
+  inputGasPrice: transactionFieldsActions.TInputGasPrice;
   gasPrice: AppState['transaction']['fields']['gasPrice'];
   options?: AdvancedOptions;
+  scheduling?: boolean;
+  scheduleGasPrice: AppState['schedule']['scheduleGasPrice'];
+  timeBounty: AppState['schedule']['timeBounty'];
 }
 
 interface StateProps {
@@ -32,7 +42,7 @@ interface StateProps {
 }
 
 interface DispatchProps {
-  toggleAutoGasLimit: TToggleAutoGasLimit;
+  toggleAutoGasLimit: configMetaActions.TToggleAutoGasLimit;
 }
 
 interface State {
@@ -54,10 +64,26 @@ class AdvancedGas extends React.Component<Props, State> {
   };
 
   public render() {
-    const { autoGasLimitEnabled, gasPrice, validGasPrice } = this.props;
-    const { gasPriceField, gasLimitField, nonceField, dataField, feeSummary } = this.state.options;
+    const { autoGasLimitEnabled, gasPrice, scheduling, validGasPrice } = this.props;
+    const { gasPriceField, gasLimitField, nonceField, dataField } = this.state.options;
+
     return (
       <div className="AdvancedGas row form-group">
+        {scheduling && (
+          <div>
+            <div className="row vcenter-sm">
+              <div className="col-xs-6 col-md-4 col-lg-3">
+                <ScheduleType />
+              </div>
+              <div className="col-xs-6 col-md-8 col-lg-9">
+                <WindowSizeField />
+              </div>
+            </div>
+
+            <ScheduleDepositField />
+          </div>
+        )}
+
         <div className="AdvancedGas-calculate-limit">
           <label className="checkbox">
             <input
@@ -65,36 +91,45 @@ class AdvancedGas extends React.Component<Props, State> {
               defaultChecked={autoGasLimitEnabled}
               onChange={this.handleToggleAutoGasLimit}
             />
-            <span>Automatically Calculate Gas Limit</span>
+            <span>{translate('TRANS_AUTO_GAS_TOGGLE')}</span>
           </label>
         </div>
 
         <div className="AdvancedGas-flex-wrapper flex-wrapper">
           {gasPriceField && (
-            <div className="input-group-wrapper AdvancedGas-gas-price">
-              <label className="input-group">
-                <div className="input-group-header">
-                  {translate('OFFLINE_Step2_Label_3')} (gwei)
-                </div>
-                <Input
-                  className={!!gasPrice.raw && !validGasPrice ? 'is-invalid' : ''}
-                  type="number"
-                  placeholder="40"
-                  value={gasPrice.raw}
-                  onChange={this.handleGasPriceChange}
-                />
-              </label>
+            <div className="AdvancedGas-gas-price">
+              <div className="input-group-wrapper">
+                <label className="input-group">
+                  <div className="input-group-header">
+                    {translateRaw('OFFLINE_STEP2_LABEL_3')} (gwei)
+                  </div>
+                  {/*We leave type as string instead of number, because things such as multiple decimals
+                  or invalid exponent notation does not fire the onchange handler
+                  so the component will not display as invalid for such things */}
+                  <Input
+                    maxLength={10}
+                    isValid={validGasPrice}
+                    placeholder="40"
+                    value={gasPrice.raw}
+                    onChange={this.handleGasPriceChange}
+                  />
+                </label>
+              </div>
             </div>
           )}
 
           {gasLimitField && (
             <div className="AdvancedGas-gas-limit">
-              <GasLimitField customLabel={translateRaw('OFFLINE_Step2_Label_4')} />
+              <GasLimitField
+                customLabel={translateRaw('OFFLINE_STEP2_LABEL_4')}
+                disabled={scheduling}
+                hideGasCalculationSpinner={scheduling}
+              />
             </div>
           )}
           {nonceField && (
             <div className="AdvancedGas-nonce">
-              <NonceField alwaysDisplay={true} />
+              <NonceField alwaysDisplay={true} showInvalidBeforeBlur={true} />
             </div>
           )}
         </div>
@@ -105,25 +140,63 @@ class AdvancedGas extends React.Component<Props, State> {
           </div>
         )}
 
-        {feeSummary && (
-          <div className="AdvancedGas-fee-summary">
-            <FeeSummary
-              gasPrice={gasPrice}
-              render={({ gasPriceWei, gasLimit, fee, usd }) => (
-                <span>
-                  {gasPriceWei} * {gasLimit} = {fee} {usd && <span>~= ${usd} USD</span>}
-                </span>
-              )}
-            />
-          </div>
-        )}
+        {this.renderFee()}
+      </div>
+    );
+  }
+
+  private renderFee() {
+    const { gasPrice, scheduleGasPrice } = this.props;
+    const { feeSummary } = this.state.options;
+
+    if (!feeSummary) {
+      return;
+    }
+
+    return (
+      <div className="AdvancedGas-fee-summary">
+        <FeeSummary
+          gasPrice={gasPrice}
+          scheduleGasPrice={scheduleGasPrice}
+          render={(data: RenderData) => this.printFeeFormula(data)}
+        />
+      </div>
+    );
+  }
+
+  private printFeeFormula(data: RenderData) {
+    if (this.props.scheduling) {
+      return this.getScheduleFeeFormula(data);
+    }
+
+    return this.getStandardFeeFormula(data);
+  }
+
+  private getStandardFeeFormula({ gasPriceWei, gasLimit, fee, usd }: RenderData) {
+    return (
+      <span>
+        {gasPriceWei} * {gasLimit} = {fee} {usd && <span>~= ${usd} USD</span>}
+      </span>
+    );
+  }
+
+  private getScheduleFeeFormula({ gasLimit, gasPriceWei, scheduleGasLimit, fee, usd }: RenderData) {
+    const { scheduleGasPrice, timeBounty } = this.props;
+
+    return (
+      <div>
+        {timeBounty && timeBounty.value && timeBounty.value.toString()} + {gasPriceWei} *{' '}
+        {gasLimit.toString()} +{' '}
+        {scheduleGasPrice && scheduleGasPrice.value && scheduleGasPrice.value.toString()} * (
+        {EAC_SCHEDULING_CONFIG.FUTURE_EXECUTION_COST.toString()} + {scheduleGasLimit}) =&nbsp;{fee}
+        &nbsp;{usd && <span>~=&nbsp;${usd}&nbsp;USD</span>}
       </div>
     );
   }
 
   private handleGasPriceChange = (ev: React.FormEvent<HTMLInputElement>) => {
     const { value } = ev.currentTarget;
-    this.props.inputGasPrice(sanitizeNumericalInput(value));
+    this.props.inputGasPrice(value);
   };
 
   private handleToggleAutoGasLimit = (_: React.FormEvent<HTMLInputElement>) => {
@@ -133,8 +206,10 @@ class AdvancedGas extends React.Component<Props, State> {
 
 export default connect(
   (state: AppState) => ({
-    autoGasLimitEnabled: getAutoGasLimitEnabled(state),
-    validGasPrice: isValidGasPrice(state)
+    autoGasLimitEnabled: configMetaSelectors.getAutoGasLimitEnabled(state),
+    validGasPrice: transactionSelectors.isValidGasPrice(state),
+    timeBounty: scheduleSelectors.getTimeBounty(state),
+    scheduleGasPrice: scheduleSelectors.getScheduleGasPrice(state)
   }),
-  { toggleAutoGasLimit }
+  { toggleAutoGasLimit: configMetaActions.toggleAutoGasLimit }
 )(AdvancedGas);

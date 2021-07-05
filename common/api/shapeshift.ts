@@ -1,10 +1,11 @@
+import axios from 'axios';
+import flatten from 'lodash/flatten';
+import uniqBy from 'lodash/uniqBy';
+import queryString from 'query-string';
+
 import { checkHttpStatus, parseJSON } from 'api/utils';
 
-const SHAPESHIFT_API_KEY =
-  '8abde0f70ca69d5851702d57b10305705d7333e93263124cc2a2649dab7ff9cf86401fc8de7677e8edcd0e7f1eed5270b1b49be8806937ef95d64839e319e6d9';
-
-const SHAPESHIFT_BASE_URL = 'https://shapeshift.io';
-
+export const SHAPESHIFT_BASE_URL = 'https://shapeshift.io';
 export const SHAPESHIFT_TOKEN_WHITELIST = [
   'OMG',
   'REP',
@@ -26,23 +27,112 @@ export const SHAPESHIFT_TOKEN_WHITELIST = [
   'TRST',
   'GUP'
 ];
-export const SHAPESHIFT_WHITELIST = [...SHAPESHIFT_TOKEN_WHITELIST, 'ETH', 'ETC', 'BTC'];
+export const SHAPESHIFT_WHITELIST = [...SHAPESHIFT_TOKEN_WHITELIST, 'ETH', 'ETC', 'BTC', 'XMR'];
+export const SHAPESHIFT_ACCESS_TOKEN = 'c640aa85-dd01-4db1-a6f2-ed57e6fd6c54';
+export const SHAPESHIFT_API_URL = 'https://auth.shapeshift.io/oauth/authorize';
+export const SHAPESHIFT_CLIENT_ID = 'c74cd600-2f91-4107-af60-b70954da5ad2';
+export const SHAPESHIFT_REDIRECT_URI = 'https://mycrypto.com/swap';
+
+interface IPairData {
+  limit: number;
+  maxLimit: number;
+  min: number;
+  minerFee: number;
+  pair: string;
+  rate: string;
+}
+
+interface IExtraPairData {
+  status: string;
+  image: string;
+  name: string;
+}
+
+interface IAvailablePairData {
+  [pairName: string]: IExtraPairData;
+}
+
+interface ShapeshiftMarketInfo {
+  rate: string;
+  limit: number;
+  pair: string;
+  maxLimit: number;
+  min: number;
+  minerFee: number;
+}
+
+interface TokenMap {
+  [pairName: string]: {
+    id: string;
+    rate: string;
+    limit: number;
+    min: number;
+    options: (IExtraPairData & { id: string })[];
+  };
+}
+
+interface ShapeshiftCoinInfo {
+  image: string;
+  imageSmall: string;
+  minerFee: number;
+  name: string;
+  status: string;
+  symbol: string;
+}
+
+interface ShapeshiftCoinInfoMap {
+  [id: string]: ShapeshiftCoinInfo;
+}
+
+interface ShapeshiftOption {
+  id?: string;
+  status?: string;
+  image?: string;
+}
+
+interface ShapeshiftOptionMap {
+  [symbol: string]: ShapeshiftOption;
+}
 
 class ShapeshiftService {
   public whitelist = SHAPESHIFT_WHITELIST;
   private url = SHAPESHIFT_BASE_URL;
-  private apiKey = SHAPESHIFT_API_KEY;
-  private postHeaders = {
-    'Content-Type': 'application/json'
-  };
+  private supportedCoinsAndTokens: ShapeshiftCoinInfoMap = {};
+  private fetchedSupportedCoinsAndTokens = false;
+  private token: string | null = null;
 
-  public checkStatus(address) {
+  public constructor() {
+    this.retrieveAccessTokenFromStorage();
+
+    if (process.env.BUILD_ELECTRON) {
+      const { ipcRenderer } = (window as any).require('electron');
+
+      ipcRenderer.on('shapeshift-set-token', (_: any, token: string) =>
+        this.saveAccessTokenToStorage(token)
+      );
+    }
+  }
+
+  public hasToken() {
+    return !!window.localStorage.getItem(SHAPESHIFT_ACCESS_TOKEN);
+  }
+
+  public urlHasCodeParam() {
+    return !!queryString.parse(window.location.search).code;
+  }
+
+  public checkStatus(address: string) {
     return fetch(`${this.url}/txStat/${address}`)
       .then(checkHttpStatus)
       .then(parseJSON);
   }
 
-  public sendAmount(withdrawal, originKind, destinationKind, destinationAmount) {
+  public sendAmount(
+    withdrawal: string,
+    originKind: string,
+    destinationKind: string,
+    destinationAmount: number
+  ) {
     const pair = `${originKind.toLowerCase()}_${destinationKind.toLowerCase()}`;
 
     return fetch(`${this.url}/sendamount`, {
@@ -50,10 +140,9 @@ class ShapeshiftService {
       body: JSON.stringify({
         amount: destinationAmount,
         pair,
-        apiKey: this.apiKey,
         withdrawal
       }),
-      headers: new Headers(this.postHeaders)
+      headers: new Headers(this.getPostHeaders())
     })
       .then(checkHttpStatus)
       .then(parseJSON)
@@ -75,29 +164,122 @@ class ShapeshiftService {
 
   public getAllRates = async () => {
     const marketInfo = await this.getMarketInfo();
-    const pairRates = await this.getPairRates(marketInfo);
+    const pairRates = this.filterPairs(marketInfo);
     const checkAvl = await this.checkAvl(pairRates);
     const mappedRates = this.mapMarketInfo(checkAvl);
-    return mappedRates;
+    const allRates = this.addUnavailableCoinsAndTokens(mappedRates);
+
+    return allRates;
   };
 
-  private getPairRates(marketInfo) {
-    const filteredMarketInfo = marketInfo.filter(obj => {
+  public sendUserToAuthorize = () => {
+    const query = queryString.stringify({
+      client_id: SHAPESHIFT_CLIENT_ID,
+      scope: 'users:read',
+      response_type: 'code',
+      redirect_uri: SHAPESHIFT_REDIRECT_URI
+    });
+    const url = `${SHAPESHIFT_API_URL}?${query}`;
+
+    if (process.env.BUILD_ELECTRON) {
+      const { ipcRenderer } = (window as any).require('electron');
+
+      ipcRenderer.send('shapeshift-authorize', url);
+    } else {
+      window.open(url, '_blank', 'width=800, height=600, menubar=yes');
+    }
+  };
+
+  public requestAccessToken = async () => {
+    const { code } = queryString.parse(window.location.search);
+    const {
+      data: { access_token: token }
+    } = await axios.post('https://proxy.mycryptoapi.com/request-shapeshift-token', {
+      code,
+      grant_type: 'authorization_code'
+    });
+
+    this.token = token;
+    this.saveAccessTokenToStorage(token);
+
+    if (process.env.BUILD_ELECTRON) {
+      const { ipcRenderer } = (window as any).require('electron');
+
+      ipcRenderer.send('shapeshift-token-retrieved', token);
+    }
+  };
+
+  public addUnavailableCoinsAndTokens = (availableCoinsAndTokens: TokenMap) => {
+    if (this.fetchedSupportedCoinsAndTokens) {
+      /** @desc Create a hash for efficiently checking which tokens are currently available. */
+      const allOptions = flatten(
+        Object.values(availableCoinsAndTokens).map(({ options }) => options)
+      );
+      const availableOptions: ShapeshiftOptionMap = uniqBy(allOptions, 'id').reduce(
+        (prev: ShapeshiftOptionMap, next) => {
+          prev[next.id] = next;
+          return prev;
+        },
+        {}
+      );
+
+      const unavailableCoinsAndTokens = this.whitelist
+        .map(token => {
+          /** @desc ShapeShift claims support for the token and it is available. */
+          const availableCoinOrToken = availableOptions[token];
+
+          if (availableCoinOrToken) {
+            return null;
+          }
+
+          /** @desc ShapeShift claims support for the token, but it is unavailable. */
+          const supportedCoinOrToken = this.supportedCoinsAndTokens[token];
+
+          if (supportedCoinOrToken) {
+            const { symbol: id, image, name, status } = supportedCoinOrToken;
+
+            return {
+              /** @desc Preface the false id with '__' to differentiate from actual pairs. */
+              id: `__${id}`,
+              limit: 0,
+              min: 0,
+              options: [{ id, image, name, status }]
+            };
+          }
+
+          /** @desc We claim support for the coin or token, but ShapeShift doesn't. */
+          return null;
+        })
+        .reduce((prev: ShapeshiftOptionMap, next) => {
+          if (next) {
+            prev[next.id] = next;
+
+            return prev;
+          }
+
+          return prev;
+        }, {});
+
+      return { ...availableCoinsAndTokens, ...unavailableCoinsAndTokens };
+    }
+
+    return availableCoinsAndTokens;
+  };
+
+  private getPostHeaders = () => ({
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${this.token}`
+  });
+
+  private filterPairs(marketInfo: ShapeshiftMarketInfo[]) {
+    return marketInfo.filter(obj => {
       const { pair } = obj;
       const pairArr = pair.split('_');
-      return this.whitelist.includes(pairArr[0]) && this.whitelist.includes(pairArr[1])
-        ? true
-        : false;
+      return this.whitelist.includes(pairArr[0]) && this.whitelist.includes(pairArr[1]);
     });
-    const pairRates = filteredMarketInfo.map(p => {
-      const { pair } = p;
-      const singlePair = Promise.resolve(this.getSinglePairRate(pair));
-      return { ...p, ...singlePair };
-    });
-    return pairRates;
   }
 
-  private async checkAvl(pairRates) {
+  private async checkAvl(pairRates: IPairData[]) {
     const avlCoins = await this.getAvlCoins();
     const mapAvl = pairRates.map(p => {
       const { pair } = p;
@@ -121,19 +303,20 @@ class ShapeshiftService {
         };
       }
     });
-    return mapAvl;
+    const filered = mapAvl.filter(v => v);
+    return filered as (IPairData & IAvailablePairData)[];
   }
 
   private getAvlCoins() {
     return fetch(`${this.url}/getcoins`)
       .then(checkHttpStatus)
-      .then(parseJSON);
-  }
+      .then(parseJSON)
+      .then(supportedCoinsAndTokens => {
+        this.supportedCoinsAndTokens = supportedCoinsAndTokens;
+        this.fetchedSupportedCoinsAndTokens = true;
 
-  private getSinglePairRate(pair) {
-    return fetch(`${this.url}/rate/${pair}`)
-      .then(checkHttpStatus)
-      .then(parseJSON);
+        return supportedCoinsAndTokens;
+      });
   }
 
   private getMarketInfo() {
@@ -142,15 +325,14 @@ class ShapeshiftService {
       .then(parseJSON);
   }
 
-  private isWhitelisted(coin) {
+  private isWhitelisted(coin: string) {
     return this.whitelist.includes(coin);
   }
 
-  private mapMarketInfo(marketInfo) {
-    const tokenMap = {};
+  private mapMarketInfo(marketInfo: (IPairData & IAvailablePairData)[]) {
+    const tokenMap: TokenMap = {};
     marketInfo.forEach(m => {
-      const originKind = m.pair.substring(0, 3);
-      const destinationKind = m.pair.substring(4, 7);
+      const [originKind, destinationKind] = m.pair.split('_');
       if (this.isWhitelisted(originKind) && this.isWhitelisted(destinationKind)) {
         const pairName = originKind + destinationKind;
         const { rate, limit, min } = m;
@@ -178,6 +360,19 @@ class ShapeshiftService {
     });
     return tokenMap;
   }
+
+  private saveAccessTokenToStorage = (token: string) => {
+    if (window && window.localStorage) {
+      window.localStorage.setItem(SHAPESHIFT_ACCESS_TOKEN, token);
+    }
+  };
+
+  private retrieveAccessTokenFromStorage = () => {
+    if (window && window.localStorage) {
+      const token = window.localStorage.getItem(SHAPESHIFT_ACCESS_TOKEN);
+      this.token = token;
+    }
+  };
 }
 
 const shapeshift = new ShapeshiftService();

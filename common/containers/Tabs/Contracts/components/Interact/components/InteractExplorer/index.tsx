@@ -1,29 +1,37 @@
 import React, { Component } from 'react';
-import translate from 'translations';
-import './InteractExplorer.scss';
-import { TShowNotification, showNotification } from 'actions/notifications';
-import { getNodeLib } from 'selectors/config';
-import { getTo, getDataExists } from 'selectors/transaction';
-import { GenerateTransaction } from 'components/GenerateTransaction';
-import { AppState } from 'reducers';
 import { connect } from 'react-redux';
-import { Fields } from './components';
-import { setDataField, TSetDataField } from 'actions/transaction';
+import { bufferToHex } from 'ethereumjs-util';
+
+import translate from 'translations';
 import { Data } from 'libs/units';
-import { Web3Node } from 'libs/nodes';
-import RpcNode from 'libs/nodes/rpc';
-import { Input } from 'components/ui';
-import Dropdown from 'components/ui/Dropdown';
+import { INode } from 'libs/nodes';
+import { AppState } from 'features/reducers';
+import { configNodesSelectors, configSelectors } from 'features/config';
+import { notificationsActions } from 'features/notifications';
+import {
+  transactionFieldsActions,
+  transactionFieldsSelectors,
+  transactionMetaActions,
+  transactionSelectors
+} from 'features/transaction';
+import { GenerateTransaction } from 'components/GenerateTransaction';
+import { Input, Dropdown } from 'components/ui';
+import { Fields } from './components';
+import './InteractExplorer.scss';
 
 interface StateProps {
-  nodeLib: RpcNode | Web3Node;
+  nodeLib: INode;
   to: AppState['transaction']['fields']['to'];
   dataExists: boolean;
+  chainId: number;
 }
 
 interface DispatchProps {
-  showNotification: TShowNotification;
-  setDataField: TSetDataField;
+  showNotification: notificationsActions.TShowNotification;
+  setDataField: transactionFieldsActions.TSetDataField;
+  resetTransactionRequested: transactionFieldsActions.TResetTransactionRequested;
+  setAsContractInteraction: transactionMetaActions.TSetAsContractInteraction;
+  setAsViewAndSend: transactionMetaActions.TSetAsViewAndSend;
 }
 
 interface OwnProps {
@@ -36,7 +44,7 @@ interface State {
   inputs: {
     [key: string]: { rawData: string; parsedData: string[] | string };
   };
-  outputs;
+  outputs: any;
   selectedFunction: null | ContractOption;
 }
 
@@ -65,6 +73,15 @@ class InteractExplorerClass extends Component<Props, State> {
     outputs: {}
   };
 
+  public componentDidMount() {
+    this.props.setAsContractInteraction();
+    this.props.resetTransactionRequested();
+  }
+
+  public componentWillUnmount() {
+    this.props.setAsViewAndSend();
+  }
+
   public render() {
     const { inputs, outputs, selectedFunction } = this.state;
     const contractFunctionsOptions = this.contractOptions();
@@ -78,7 +95,7 @@ class InteractExplorerClass extends Component<Props, State> {
         className="InteractExplorer-func-submit btn btn-primary"
         onClick={this.handleFunctionSend}
       >
-        {translate('CONTRACT_Write')}
+        {translate('CONTRACT_WRITE')}
       </button>
     );
 
@@ -87,17 +104,18 @@ class InteractExplorerClass extends Component<Props, State> {
         <div className="input-group-wrapper">
           <label className="input-group">
             <div className="input-group-header">
-              {translate('CONTRACT_Interact_Title')}
+              {translate('CONTRACT_INTERACT_TITLE')}
               <div className="flex-spacer" />
               <span className="small">{to.raw}</span>
             </div>
             <Dropdown
               name="exploreContract"
               value={selectedFunction as any}
-              placeholder="Please select a function..."
+              placeholder={translate('SELECT_A_THING', { $thing: 'function' })}
               onChange={this.handleFunctionSelect}
               options={contractFunctionsOptions}
-              clearable={false}
+              clearable={true}
+              searchable={true}
               labelKey="name"
               valueKey="contract"
             />
@@ -107,34 +125,66 @@ class InteractExplorerClass extends Component<Props, State> {
         {selectedFunction && (
           <div key={selectedFunction.name} className="InteractExplorer-func">
             {/* TODO: Use reusable components with validation */}
-            {selectedFunction.contract.inputs.map(input => {
+            {selectedFunction.contract.inputs.map((input, index) => {
               const { type, name } = input;
+              // if name is not supplied to arg, use the index instead
+              // since that's what the contract ABI function factory subsitutes for the name
+              // if it is undefined
+              const parsedName = name === '' ? index : name;
 
+              const inputState = this.state.inputs[parsedName];
               return (
-                <div key={name} className="input-group-wrapper InteractExplorer-func-in">
+                <div key={parsedName} className="input-group-wrapper InteractExplorer-func-in">
                   <label className="input-group">
-                    <div className="input-group-header">{name + ' ' + type}</div>
-                    <Input
-                      className="InteractExplorer-func-in-input"
-                      name={name}
-                      value={(inputs[name] && inputs[name].rawData) || ''}
-                      onChange={this.handleInputChange}
-                    />
+                    <div className="input-group-header">
+                      {(parsedName === index ? `Input#${parsedName}` : parsedName) + ' ' + type}
+                    </div>
+                    {type === 'bool' ? (
+                      <Dropdown
+                        options={[{ value: false, label: 'false' }, { value: true, label: 'true' }]}
+                        value={
+                          inputState
+                            ? {
+                                label: inputState.rawData,
+                                value: inputState.parsedData as any
+                              }
+                            : undefined
+                        }
+                        clearable={false}
+                        onChange={({ value }: { value: boolean }) => {
+                          this.handleBooleanDropdownChange({ value, name: parsedName });
+                        }}
+                      />
+                    ) : (
+                      <Input
+                        className="InteractExplorer-func-in-input"
+                        isValid={!!(inputs[parsedName] && inputs[parsedName].rawData)}
+                        name={parsedName}
+                        value={(inputs[parsedName] && inputs[parsedName].rawData) || ''}
+                        onChange={this.handleInputChange}
+                      />
+                    )}
                   </label>
                 </div>
               );
             })}
-            {selectedFunction.contract.outputs.map((output, index) => {
+            {selectedFunction.contract.outputs.map((output: any, index: number) => {
               const { type, name } = output;
               const parsedName = name === '' ? index : name;
+              const o = outputs[parsedName];
+              const rawFieldValue = o === null || o === undefined ? '' : o;
+              const decodedFieldValue = Buffer.isBuffer(rawFieldValue)
+                ? bufferToHex(rawFieldValue)
+                : rawFieldValue;
 
               return (
                 <div key={parsedName} className="input-group-wrapper InteractExplorer-func-out">
                   <label className="input-group">
                     <div className="input-group-header"> ↳ {name + ' ' + type}</div>
                     <Input
-                      className="InteractExplorer-func-out-input "
-                      value={outputs[parsedName] || ''}
+                      className="InteractExplorer-func-out-input"
+                      isValid={!!decodedFieldValue}
+                      value={decodedFieldValue}
                       disabled={true}
                     />
                   </label>
@@ -147,7 +197,7 @@ class InteractExplorerClass extends Component<Props, State> {
                 className="InteractExplorer-func-submit btn btn-primary"
                 onClick={this.handleFunctionCall}
               >
-                {translate('CONTRACT_Read')}
+                {translate('CONTRACT_READ')}
               </button>
             ) : (
               <React.Fragment>
@@ -177,7 +227,7 @@ class InteractExplorerClass extends Component<Props, State> {
   private handleFunctionCall = async (_: React.FormEvent<HTMLButtonElement>) => {
     try {
       const data = this.encodeData();
-      const { nodeLib, to } = this.props;
+      const { nodeLib, to, chainId } = this.props;
       const { selectedFunction } = this.state;
 
       if (!to.value) {
@@ -187,7 +237,8 @@ class InteractExplorerClass extends Component<Props, State> {
       const callData = { to: to.raw, data };
       const results = await nodeLib.sendCallRequest(callData);
 
-      const parsedResult = selectedFunction!.contract.decodeOutput(results);
+      const parsedResult = selectedFunction!.contract.decodeOutput(results, chainId);
+
       this.setState({ outputs: parsedResult });
     } catch (e) {
       this.props.showNotification(
@@ -236,6 +287,17 @@ class InteractExplorerClass extends Component<Props, State> {
     }
   }
 
+  private handleBooleanDropdownChange = ({ value, name }: { value: boolean; name: string }) => {
+    this.setState({
+      inputs: {
+        ...this.state.inputs,
+        [name as any]: {
+          rawData: value.toString(),
+          parsedData: value
+        }
+      }
+    });
+  };
   private handleInputChange = (ev: React.FormEvent<HTMLInputElement>) => {
     const rawValue: string = ev.currentTarget.value;
     const isArr = rawValue.startsWith('[') && rawValue.endsWith(']');
@@ -255,9 +317,16 @@ class InteractExplorerClass extends Component<Props, State> {
 
 export const InteractExplorer = connect(
   (state: AppState) => ({
-    nodeLib: getNodeLib(state),
-    to: getTo(state),
-    dataExists: getDataExists(state)
+    nodeLib: configNodesSelectors.getNodeLib(state),
+    to: transactionFieldsSelectors.getTo(state),
+    dataExists: transactionSelectors.getDataExists(state),
+    chainId: configSelectors.getNetworkChainId(state)
   }),
-  { showNotification, setDataField }
+  {
+    showNotification: notificationsActions.showNotification,
+    setDataField: transactionFieldsActions.setDataField,
+    resetTransactionRequested: transactionFieldsActions.resetTransactionRequested,
+    setAsContractInteraction: transactionMetaActions.setAsContractInteraction,
+    setAsViewAndSend: transactionMetaActions.setAsViewAndSend
+  }
 )(InteractExplorerClass);

@@ -1,7 +1,7 @@
-import { AmountFieldFactory } from 'components/AmountFieldFactory';
 import React from 'react';
-import classnames from 'classnames';
+
 import { Input } from 'components/ui';
+import { AmountFieldFactory } from 'components/AmountFieldFactory';
 
 export const AmountField: React.SFC = () => (
   <div className="input-group-wrapper InteractExplorer-field">
@@ -12,11 +12,10 @@ export const AmountField: React.SFC = () => (
           <Input
             name="value"
             value={raw}
+            isValid={isValid || raw === ''}
             onChange={onChange}
             readOnly={readOnly}
-            className={classnames('InteractExplorer-field-input', 'form-control', {
-              'is-invalid': !(isValid || raw === '')
-            })}
+            className="InteractExplorer-field-input"
           />
         )}
       />

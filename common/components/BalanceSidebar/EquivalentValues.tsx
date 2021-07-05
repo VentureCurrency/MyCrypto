@@ -1,21 +1,22 @@
 import React from 'react';
-import translate from 'translations';
-import { UnitDisplay, Spinner } from 'components/ui';
-import Select from 'react-select';
-import { TFetchCCRatesRequested, fetchCCRatesRequested } from 'actions/rates';
-import { rateSymbols } from 'api/rates';
-import { chain, flatMap } from 'lodash';
-import { TokenBalance, getShownTokenBalances } from 'selectors/wallet';
-import { Balance } from 'libs/wallet';
-import './EquivalentValues.scss';
-import { Wei } from 'libs/units';
-import { AppState } from 'reducers';
-import { getNetworkConfig, getOffline } from 'selectors/config';
 import { connect } from 'react-redux';
+import Select from 'react-select';
+import BN from 'bn.js';
+import { chain, flatMap } from 'lodash';
+
+import translate from 'translations';
+import { rateSymbols } from 'api/rates';
+import { NetworkConfig } from 'types/network';
+import { Balance } from 'libs/wallet';
+import { AppState } from 'features/reducers';
+import * as selectors from 'features/selectors';
+import { configSelectors, configMetaSelectors } from 'features/config';
+import { ratesActions } from 'features/rates';
+import { walletTypes } from 'features/wallet';
+import { UnitDisplay, Spinner } from 'components/ui';
 import btcIco from 'assets/images/bitcoin.png';
 import ethIco from 'assets/images/ether.png';
-import repIco from 'assets/images/augur.png';
-import { NetworkConfig } from 'types/network';
+import './EquivalentValues.scss';
 
 interface AllValue {
   symbol: string;
@@ -41,14 +42,22 @@ interface StateProps {
   balance: Balance;
   network: NetworkConfig;
 
-  tokenBalances: TokenBalance[];
+  tokenBalances: walletTypes.TokenBalance[];
   rates: AppState['rates']['rates'];
   ratesError: AppState['rates']['ratesError'];
   isOffline: AppState['config']['meta']['offline'];
 }
 
 interface DispatchProps {
-  fetchCCRates: TFetchCCRatesRequested;
+  fetchCCRates: ratesActions.TFetchCCRatesRequested;
+}
+
+interface FiatSymbols {
+  [key: string]: string;
+}
+
+interface Rates {
+  [rate: string]: number;
 }
 
 type Props = StateProps & DispatchProps;
@@ -71,7 +80,7 @@ class EquivalentValues extends React.Component<Props, State> {
 
   public defaultOption(
     balance: Balance,
-    tokenBalances: TokenBalance[],
+    tokenBalances: walletTypes.TokenBalance[],
     network: StateProps['network']
   ): DefaultOption {
     return {
@@ -80,7 +89,7 @@ class EquivalentValues extends React.Component<Props, State> {
     };
   }
 
-  public componentWillReceiveProps(nextProps: Props) {
+  public UNSAFE_componentWillReceiveProps(nextProps: Props) {
     const { balance, tokenBalances, isOffline, network } = this.props;
     if (
       nextProps.balance !== balance ||
@@ -110,7 +119,7 @@ class EquivalentValues extends React.Component<Props, State> {
     }
   }
 
-  public selectOption = equivalentValues => {
+  public selectOption = (equivalentValues: Option) => {
     this.setState({ equivalentValues });
   };
 
@@ -120,28 +129,41 @@ class EquivalentValues extends React.Component<Props, State> {
     const isFetching =
       !balance || balance.isPending || !tokenBalances || Object.keys(rates).length === 0;
     const pairRates = this.generateValues(equivalentValues.label, equivalentValues.value);
-    const fiatSymbols = {
+    const fiatSymbols: FiatSymbols = {
       USD: '$',
       EUR: '€',
       GBP: '£',
-      CHF: ' '
+      CHF: '₣',
+      RUB: '₽',
+      JPY: '¥',
+      KRW: '₩',
+      INR: '₹'
     };
-    const coinAndTokenSymbols = {
+    const coinAndTokenSymbols: any = {
       BTC: btcIco,
-      ETH: ethIco,
-      REP: repIco
+      ETH: ethIco
     };
+    interface ValueProps {
+      className: string;
+      rate: string;
+      value: BN | null;
+      symbol?: string;
+      icon?: string;
+      key?: number | string;
+    }
 
-    const Value = ({ className = '', rate, value, symbol = '', icon = '' }) => (
-      <div className={`EquivalentValues-values-currency ${className}`}>
-        <img src={icon} />
-        {!!symbol && <span className="EquivalentValues-values-currency-fiat-symbol">{symbol}</span>}
-        <span className="EquivalentValues-values-currency-label">{rate}</span>{' '}
+    const Value = (props: ValueProps) => (
+      <div className={`EquivalentValues-values-currency ${props.className}`}>
+        <img src={props.icon} />
+        {!!props.symbol && (
+          <span className="EquivalentValues-values-currency-fiat-symbol">{props.symbol}</span>
+        )}
+        <span className="EquivalentValues-values-currency-label">{props.rate}</span>{' '}
         <span className="EquivalentValues-values-currency-value">
           <UnitDisplay
             unit={'ether'}
-            value={value}
-            displayShortBalance={rateSymbols.isFiat(rate) ? 2 : 3}
+            value={props.value}
+            displayShortBalance={rateSymbols.isFiat(props.rate) ? 2 : 3}
             checkOffline={true}
           />
         </span>
@@ -151,13 +173,13 @@ class EquivalentValues extends React.Component<Props, State> {
     return (
       <div className="EquivalentValues">
         <div className="EquivalentValues-header">
-          <h5 className="EquivalentValues-title">{translate('sidebar_Equiv')}</h5>
+          <h5 className="EquivalentValues-title">{translate('SIDEBAR_EQUIV')}</h5>
           <Select
             name="equivalentValues"
             // TODO: Update type
             value={equivalentValues as any}
             options={options as any}
-            onChange={this.selectOption}
+            onChange={this.selectOption as any}
             clearable={false}
             searchable={false}
           />
@@ -165,13 +187,15 @@ class EquivalentValues extends React.Component<Props, State> {
 
         {isOffline ? (
           <div className="EquivalentValues-offline well well-sm">
-            Equivalent values are unavailable offline
+            {translate('EQUIV_VALS_OFFLINE')}
           </div>
         ) : network.isTestnet ? (
           <div className="text-center">
-            <h5 style={{ color: 'red' }}>
-              On test network, equivalent values will not be displayed.
-            </h5>
+            <h5 style={{ color: 'red' }}>{translate('EQUIV_VALS_TESTNET')}</h5>
+          </div>
+        ) : network.hideEquivalentValues ? (
+          <div className="text-center">
+            <h5 style={{ color: 'red' }}>{translate('EQUIV_VALS_UNSUPPORTED_UNIT')}</h5>
           </div>
         ) : ratesError ? (
           <h5>{ratesError}</h5>
@@ -210,7 +234,7 @@ class EquivalentValues extends React.Component<Props, State> {
                 )}
               </React.Fragment>
             ) : (
-              <p>Sorry, equivalent values are not supported for this unit.</p>
+              <p>{translate('EQUIV_VALS_UNSUPPORTED_UNIT')}</p>
             )}
           </div>
         )}
@@ -224,7 +248,7 @@ class EquivalentValues extends React.Component<Props, State> {
     const allRates = Object.values(balance).map(
       value => !!rates[value.symbol] && rates[value.symbol]
     );
-    const allEquivalentValues = allRates.map((rateType, i) => {
+    const allEquivalentValues = allRates.map((rateType: any, i) => {
       return {
         symbol: Object.keys(rates)[i],
         equivalentValues: [
@@ -260,9 +284,9 @@ class EquivalentValues extends React.Component<Props, State> {
   // return equivalent value (unit * rate * balance)
   private handleValues(unit: string, balance: Balance['wei']) {
     const { rates } = this.props;
-    const ratesObj = { ...rates[unit] };
+    const ratesObj: Rates = { ...rates[unit] };
     return Object.keys(ratesObj).map(key => {
-      const value = (balance as Wei).muln(ratesObj[key]);
+      const value = balance!.muln(ratesObj[key]);
       return { rate: key, value };
     });
   }
@@ -305,12 +329,15 @@ class EquivalentValues extends React.Component<Props, State> {
 function mapStateToProps(state: AppState): StateProps {
   return {
     balance: state.wallet.balance,
-    tokenBalances: getShownTokenBalances(state, true),
-    network: getNetworkConfig(state),
+    tokenBalances: selectors.getShownTokenBalances(state, true),
+    network: configSelectors.getNetworkConfig(state),
     rates: state.rates.rates,
     ratesError: state.rates.ratesError,
-    isOffline: getOffline(state)
+    isOffline: configMetaSelectors.getOffline(state)
   };
 }
 
-export default connect(mapStateToProps, { fetchCCRates: fetchCCRatesRequested })(EquivalentValues);
+export default connect(
+  mapStateToProps,
+  { fetchCCRates: ratesActions.fetchCCRatesRequested }
+)(EquivalentValues);

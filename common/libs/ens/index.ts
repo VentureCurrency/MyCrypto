@@ -1,7 +1,7 @@
 import uts46 from 'idna-uts46';
 import ethUtil from 'ethereumjs-util';
 
-export function normalise(name: string) {
+export function normalise(name: string): string {
   try {
     return uts46.toUnicode(name, { useStd3ASCII: true, transitional: false });
   } catch (e) {
@@ -39,11 +39,12 @@ export interface IBaseDomainRequest {
 
 export interface IOwnedDomainRequest extends IBaseDomainRequest {
   ownerAddress: string;
+  deedOwnerAddress: string;
   resolvedAddress: string;
 }
 
 export interface IRevealDomainRequest extends IBaseDomainRequest {
-  ownerAddress: string;
+  deedOwnerAddress: string;
 }
 
 export type DomainRequest = IOwnedDomainRequest | IRevealDomainRequest | IBaseDomainRequest;
@@ -65,7 +66,7 @@ export enum NameState {
   NotYetAvailable = '5'
 }
 
-export const modeStrMap = name => [
+export const modeStrMap = (name: string) => [
   `${name} is available and the auction hasn’t started`,
   `${name} is available and the auction has been started`,
   `${name} is taken and currently owned by someone`,

@@ -3,8 +3,11 @@
 // Pass `isVisible` and `handleToggleVisibility` to control the visibility
 // yourself, otherwise all visibiility changes are managed in internal state.
 import React from 'react';
-import './TogglablePassword.scss';
+
 import { Input, TextArea } from 'components/ui';
+import './TogglablePassword.scss';
+import openEye from 'common/assets/images/icn-show-eye.svg';
+import closedEye from 'common/assets/images/icn-show-closed-eye-svg.svg';
 
 interface Props {
   // Shared props
@@ -17,7 +20,7 @@ interface Props {
   toggleAriaLabel?: string;
   isValid?: boolean;
   isVisible?: boolean;
-  validity?: 'valid' | 'invalid' | 'semivalid';
+  readOnly?: boolean;
 
   // Textarea-only props
   isTextareaWhenVisible?: boolean;
@@ -40,7 +43,7 @@ export default class TogglablePassword extends React.PureComponent<Props, State>
     isVisible: !!this.props.isVisible
   };
 
-  public componentWillReceiveProps(nextProps: Props) {
+  public UNSAFE_componentWillReceiveProps(nextProps: Props) {
     if (this.props.isVisible !== nextProps.isVisible) {
       this.setState({ isVisible: !!nextProps.isVisible });
     }
@@ -55,24 +58,22 @@ export default class TogglablePassword extends React.PureComponent<Props, State>
       disabled,
       ariaLabel,
       toggleAriaLabel,
-      validity,
       isTextareaWhenVisible,
       isValid,
       onChange,
       onFocus,
       onBlur,
-      handleToggleVisibility
+      handleToggleVisibility,
+      readOnly
     } = this.props;
     const { isVisible } = this.state;
-    const validClass = validity
-      ? `is-${validity}`
-      : isValid === null || isValid === undefined ? '' : isValid ? 'is-valid' : 'is-invalid';
 
     return (
-      <div className={`TogglablePassword input-group input-group-inline-dropdown ${className}`}>
+      <div className={`TogglablePassword input-group input-group-inline`}>
         {isTextareaWhenVisible && isVisible ? (
           <TextArea
-            className={validClass}
+            isValid={!!isValid}
+            className={className}
             value={value}
             name={name}
             disabled={disabled}
@@ -83,19 +84,22 @@ export default class TogglablePassword extends React.PureComponent<Props, State>
             placeholder={placeholder}
             rows={this.props.rows || 3}
             aria-label={ariaLabel}
+            readOnly={readOnly}
           />
         ) : (
           <Input
+            isValid={!!isValid}
             value={value}
             name={name}
             disabled={disabled}
             type={isVisible ? 'text' : 'password'}
-            className={`${validClass}`}
+            className={`${className} border-rad-right-0`}
             placeholder={placeholder}
             onChange={onChange}
             onFocus={onFocus}
             onBlur={onBlur}
             aria-label={ariaLabel}
+            readOnly={readOnly}
           />
         )}
         <span
@@ -104,7 +108,7 @@ export default class TogglablePassword extends React.PureComponent<Props, State>
           role="button"
           className="TogglablePassword-toggle input-group-addon"
         >
-          <i className={`fa fa-${isVisible ? 'eye-slash' : 'eye'}`} />
+          {isVisible ? <img src={closedEye} /> : <img src={openEye} />}
         </span>
       </div>
     );

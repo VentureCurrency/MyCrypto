@@ -1,12 +1,14 @@
 import React, { Component } from 'react';
-import Code from 'components/ui/Code';
-import './Details.scss';
-import { SerializedTransaction } from 'components/renderCbs';
-import { AppState } from 'reducers';
-import { getNodeConfig } from 'selectors/config';
 import { connect } from 'react-redux';
-import { TokenValue } from 'libs/units';
+import { addHexPrefix } from 'ethereumjs-util';
+
+import translate, { translateRaw } from 'translations';
 import { NodeConfig } from 'types/node';
+import { CodeBlock, Input } from 'components/ui';
+import { AppState } from 'features/reducers';
+import { configNodesSelectors } from 'features/config';
+import { SerializedTransaction } from 'components/renderCbs';
+import './Details.scss';
 
 interface StateProps {
   node: NodeConfig;
@@ -14,24 +16,37 @@ interface StateProps {
 
 class DetailsClass extends Component<StateProps> {
   public render() {
-    const { node: { network, service } } = this.props;
+    const {
+      node: { network, service }
+    } = this.props;
     return (
       <div className="tx-modal-details">
-        <p className="tx-modal-details-network-info">
-          Interacting with the {network} network provided by {service}
-        </p>
+        <label className="input-group">
+          <div className="input-group-header">{translate('NETWORK')}</div>
+          <Input
+            isValid={true}
+            showValidAsPlain={true}
+            readOnly={true}
+            value={`${translateRaw('NETWORK_2', {
+              $network: network
+            })} - ${translateRaw('PROVIDED_BY', { $service: service })}`}
+          />
+        </label>
 
         <SerializedTransaction
           withSerializedTransaction={(_, fields) => {
-            const { chainId, data, to, ...convertRestToBase10 } = fields;
-            const base10Fields = Object.entries(convertRestToBase10).reduce(
-              (convertedFields, [currName, currValue]) => ({
-                ...convertedFields,
-                [currName]: TokenValue(currValue).toString()
-              }),
-              {} as typeof convertRestToBase10
+            return (
+              <React.Fragment>
+                <label className="input-group">
+                  <div className="input-group-header">{translate('SEND_RAW')}</div>
+                  <CodeBlock>{JSON.stringify(fields, null, 2)} </CodeBlock>
+                </label>
+                <label className="input-group">
+                  <div className="input-group-header">{translate('SEND_SIGNED')}</div>
+                  <CodeBlock>{addHexPrefix(_)} </CodeBlock>
+                </label>
+              </React.Fragment>
             );
-            return <Code>{JSON.stringify({ chainId, data, to, ...base10Fields }, null, 2)} </Code>;
           }}
         />
       </div>
@@ -39,6 +54,6 @@ class DetailsClass extends Component<StateProps> {
   }
 }
 
-const mapStateToProps = (state: AppState) => ({ node: getNodeConfig(state) });
+const mapStateToProps = (state: AppState) => ({ node: configNodesSelectors.getNodeConfig(state) });
 
 export const Details = connect(mapStateToProps)(DetailsClass);

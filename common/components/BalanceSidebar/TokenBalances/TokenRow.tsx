@@ -1,6 +1,8 @@
-import removeIcon from 'assets/images/icon-remove.svg';
 import React from 'react';
+
+import { translateRaw } from 'translations';
 import { TokenValue } from 'libs/units';
+import removeIcon from 'assets/images/icon-remove.svg';
 import { UnitDisplay } from 'components/ui';
 import './TokenRow.scss';
 
@@ -12,6 +14,7 @@ interface Props {
   custom?: boolean;
   decimal: number;
   tracked: boolean;
+  isOffline: boolean;
   toggleTracked: ToggleTrackedFn | false;
   onRemove(symbol: string): void;
 }
@@ -25,37 +28,46 @@ export default class TokenRow extends React.PureComponent<Props, State> {
   };
 
   public render() {
-    const { balance, symbol, custom, decimal, tracked } = this.props;
+    const { balance, symbol, custom, decimal, tracked, isOffline } = this.props;
     const { showLongBalance } = this.state;
 
     return (
       <tr className="TokenRow" onClick={this.handleToggleTracked}>
+        {/* Only allow to toggle tracking on non custom tokens
+        because the user can just remove the custom token instead */}
         {this.props.toggleTracked && (
           <td className="TokenRow-toggled">
-            <input type="checkbox" checked={tracked} />
+            <input
+              type="checkbox"
+              checked={tracked || this.props.custom}
+              disabled={this.props.custom}
+            />
           </td>
         )}
-        <td
-          className="TokenRow-balance"
-          title={`${balance.toString()} (Double-Click)`}
-          onDoubleClick={this.toggleShowLongBalance}
-        >
-          <span>
-            <UnitDisplay
-              value={balance}
-              decimal={decimal}
-              displayShortBalance={!showLongBalance}
-              checkOffline={true}
-            />
-          </span>
-        </td>
+        {!isOffline && (
+          <td
+            className="TokenRow-balance"
+            title={`${balance.toString()} (Double-Click)`}
+            onDoubleClick={this.toggleShowLongBalance}
+          >
+            <span>
+              <UnitDisplay
+                value={balance}
+                decimal={decimal}
+                displayShortBalance={!showLongBalance}
+                checkOffline={true}
+              />
+            </span>
+          </td>
+        )}
         <td className="TokenRow-symbol">
           {symbol}
           {!!custom && (
             <img
               src={removeIcon}
+              alt={translateRaw('REMOVE')}
               className="TokenRow-symbol-remove"
-              title="Remove Token"
+              title={translateRaw('REMOVE_TOKEN')}
               onClick={this.onRemove}
               tabIndex={0}
             />

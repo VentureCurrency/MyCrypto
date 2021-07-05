@@ -1,12 +1,14 @@
 import React, { PureComponent } from 'react';
 import { connect } from 'react-redux';
-import { AppState } from 'reducers';
-import { getCurrentTo, ICurrentTo } from 'selectors/transaction';
-import { getAllTokens } from 'selectors/config';
-import { getWalletInst } from 'selectors/wallet';
+
 import { getAddressMessage } from 'config';
-import { Address } from 'components/ui';
 import { Token } from 'types/network';
+import { ICurrentTo } from 'features/types';
+import { AppState } from 'features/reducers';
+import * as derivedSelectors from 'features/selectors';
+import { configSelectors } from 'features/config';
+import { walletSelectors } from 'features/wallet';
+import { Address } from 'components/ui';
 
 interface ReduxProps {
   currentTo: ICurrentTo;
@@ -29,7 +31,7 @@ class CurrentCustomMessageClass extends PureComponent<Props, State> {
     this.setAddressState(this.props);
   }
 
-  public componentWillReceiveProps(nextProps: Props) {
+  public UNSAFE_componentWillReceiveProps(nextProps: Props) {
     if (this.props.wallet !== nextProps.wallet) {
       this.setAddressState(nextProps);
     }
@@ -76,7 +78,8 @@ class CurrentCustomMessageClass extends PureComponent<Props, State> {
               A message regarding{' '}
               <strong>
                 <Address address={address} />
-              </strong>:
+              </strong>
+              :
             </small>
           </p>
           <p>{msg.msg}</p>
@@ -115,8 +118,10 @@ class CurrentCustomMessageClass extends PureComponent<Props, State> {
   }
 }
 
-export const CurrentCustomMessage = connect((state: AppState): ReduxProps => ({
-  currentTo: getCurrentTo(state),
-  tokens: getAllTokens(state),
-  wallet: getWalletInst(state)
-}))(CurrentCustomMessageClass);
+export const CurrentCustomMessage = connect(
+  (state: AppState): ReduxProps => ({
+    currentTo: derivedSelectors.getCurrentTo(state),
+    tokens: configSelectors.getAllTokens(state),
+    wallet: walletSelectors.getWalletInst(state)
+  })
+)(CurrentCustomMessageClass);

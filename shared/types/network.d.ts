@@ -1,6 +1,45 @@
-import { StaticNetworksState, CustomNetworksState } from 'reducers/config/networks';
+import { TAB } from 'components/Header/components/constants';
 
-type StaticNetworkIds = 'ETH' | 'Ropsten' | 'Kovan' | 'Rinkeby' | 'ETC' | 'UBQ' | 'EXP';
+type StaticNetworkIds =
+  | 'ETH'
+  | 'Ropsten'
+  | 'Kovan'
+  | 'Rinkeby'
+  | 'Goerli'
+  | 'ETC'
+  | 'RSK'
+  | 'AKA'
+  | 'AQUA'
+  | 'ARTIS_SIGMA1'
+  | 'ARTIS_TAU1'
+  | 'ATH'
+  | 'CLO'
+  | 'DEXON'
+  | 'EGEM'
+  | 'ELLA'
+  | 'EOSC'
+  | 'ESN'
+  | 'ETI'
+  | 'ETHO'
+  | 'ETSC'
+  | 'EXP'
+  | 'Gangnam'
+  | 'GO'
+  | 'GO_TESTNET'
+  | 'METADIUM'
+  | 'MIX'
+  | 'MUSIC'
+  | 'PIRL'
+  | 'POA'
+  | 'REOSC'
+  | 'RSK_TESTNET'
+  | 'SOLIDUM'
+  | 'THUNDERCORE'
+  | 'TOMO'
+  | 'UBQ'
+  | 'WEB'
+  | 'AUX'
+  | 'ASK';
 
 export interface BlockExplorerConfig {
   name: string;
@@ -24,9 +63,11 @@ interface NetworkContract {
 }
 
 interface DPathFormats {
-  trezor: DPath;
-  ledgerNanoS: DPath;
+  trezor?: DPath;
+  safeTmini?: DPath;
+  ledgerNanoS?: DPath;
   mnemonicPhrase: DPath;
+  default?: DPath;
 }
 
 export interface GasPriceSetting {
@@ -37,7 +78,8 @@ export interface GasPriceSetting {
 
 interface StaticNetworkConfig {
   isCustom: false; // used for type guards
-  name: StaticNetworkIds;
+  id: StaticNetworkIds;
+  name: string;
   unit: string;
   color?: string;
   blockExplorer: BlockExplorerConfig;
@@ -52,15 +94,20 @@ interface StaticNetworkConfig {
   isTestnet?: boolean;
   gasPriceSettings: GasPriceSetting;
   shouldEstimateGasPrice?: boolean;
+  unsupportedTabs?: TAB[];
+  hideEquivalentValues?: boolean;
 }
 
 interface CustomNetworkConfig {
   isCustom: true; // used for type guards
   isTestnet?: boolean;
+  id: string;
   name: string;
   unit: string;
   chainId: number;
   dPathFormats: DPathFormats | null;
+  unsupportedTabs?: TAB[];
+  hideEquivalentValues?: boolean;
 }
 
-type NetworkConfig = StaticNetworksState[StaticNetworkIds] | CustomNetworksState[string];
+type NetworkConfig = CustomNetworkConfig | StaticNetworkConfig;

@@ -12,20 +12,20 @@
       "shared*": ["../shared*"],
       "types*": ["../shared/types*"]
     },
-    "lib": ["es2017", "dom"],
+    "lib": ["esnext", "dom"],
     "allowSyntheticDefaultImports": true,
     "moduleResolution": "node",
+    "esModuleInterop": true,
     "noEmitOnError": false,
     "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "noUnusedParameters": true,
+    "pretty": true,
+    "noErrorTruncation": true,
+    "noImplicitAny": true,
+    "skipLibCheck": true
   },
-  "include": [
-    "./common/",
-    "./electron-app/",
-    "./shared/",
-    "spec",
-    "./node_modules/types-rlp/index.d.ts"
-  ],
+  "include": ["./scripts", "./common/", "./electron-app/", "./shared/", "spec"],
+  "exclude": ["./jest_config/**/*"],
   "awesomeTypescriptLoaderOptions": {
     "transpileOnly": true
   }

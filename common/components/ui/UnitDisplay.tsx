@@ -1,10 +1,11 @@
 import React from 'react';
 import { connect } from 'react-redux';
+
 import { fromTokenBase, getDecimalFromEtherUnit, UnitKey, Wei, TokenValue } from 'libs/units';
 import { formatNumber as format } from 'utils/formatters';
+import { AppState } from 'features/reducers';
+import { configMetaSelectors } from 'features/config';
 import Spinner from 'components/ui/Spinner';
-import { getOffline } from 'selectors/config';
-import { AppState } from 'reducers';
 
 interface Props {
   /**
@@ -101,7 +102,7 @@ class OfflineDisplay extends React.Component<OfflineProps> {
 
 function mapStateToOfflineProps(state: AppState) {
   return {
-    offline: getOffline(state)
+    offline: configMetaSelectors.getOffline(state)
   };
 }
 

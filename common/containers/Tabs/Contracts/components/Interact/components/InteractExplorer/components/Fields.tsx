@@ -1,8 +1,9 @@
-import { AmountField } from './AmountField';
 import React, { Component } from 'react';
-import { SendButton, SigningStatus, TXMetaDataPanel } from 'components';
+
+import { SendButton, TXMetaDataPanel } from 'components';
 import WalletDecrypt, { DISABLE_WALLETS } from 'components/WalletDecrypt';
 import { FullWalletOnly } from 'components/renderCbs';
+import { AmountField } from './AmountField';
 
 interface OwnProps {
   button: React.ReactElement<any>;
@@ -18,20 +19,13 @@ export class Fields extends Component<OwnProps> {
           initialState="advanced"
           disableToggle={true}
           advancedGasOptions={{ dataField: false }}
-          resetIncludeExcludeProperties={{ exclude: { fields: ['to'] }, include: {} }}
         />
         {this.props.button}
-        <SigningStatus />
         <SendButton />
       </React.Fragment>
     );
 
-    const makeDecrypt = () => (
-      <WalletDecrypt
-        disabledWallets={DISABLE_WALLETS.READ_ONLY}
-        resetIncludeExcludeProperties={{ exclude: { fields: ['to'] }, include: {} }}
-      />
-    );
+    const makeDecrypt = () => <WalletDecrypt disabledWallets={DISABLE_WALLETS.READ_ONLY} />;
 
     return <FullWalletOnly withFullWallet={makeContent} withoutFullWallet={makeDecrypt} />;
   }

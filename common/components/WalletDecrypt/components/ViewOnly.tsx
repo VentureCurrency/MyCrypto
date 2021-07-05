@@ -1,63 +1,113 @@
 import React, { PureComponent } from 'react';
-import translate from 'translations';
-import { donationAddressMap } from 'config';
-import { isValidETHAddress } from 'libs/validators';
-import { AddressOnlyWallet } from 'libs/wallet';
-import { TextArea } from 'components/ui';
+import { connect } from 'react-redux';
 
-interface Props {
+import translate, { translateRaw } from 'translations';
+import { AddressOnlyWallet } from 'libs/wallet';
+import { AppState } from 'features/reducers';
+import * as selectors from 'features/selectors';
+import { ICurrentTo } from 'features/types';
+import { configSelectors } from 'features/config';
+import { ensSelectors } from 'features/ens';
+import { AddressField } from 'components';
+import './ViewOnly.scss';
+
+interface OwnProps {
   onUnlock(param: any): void;
 }
 
-interface State {
-  address: string;
+interface StateProps {
+  isValidAddress: ReturnType<typeof configSelectors.getIsValidAddressFn>;
+  currentAddress: ICurrentTo;
+  resolvedAddress: ReturnType<typeof ensSelectors.getResolvedAddress>;
 }
 
-export class ViewOnlyDecrypt extends PureComponent<Props, State> {
-  public state = {
-    address: ''
+type Props = OwnProps & StateProps;
+
+interface State {
+  addressFromBook: string;
+}
+
+class ViewOnlyDecryptClass extends PureComponent<Props, State> {
+  public state: State = {
+    addressFromBook: ''
   };
 
   public render() {
-    const { address } = this.state;
-    const isValid = isValidETHAddress(address);
+    const { isValidAddress, currentAddress, resolvedAddress } = this.props;
+    const { addressFromBook } = this.state;
+    const isValid =
+      isValidAddress(currentAddress.raw) || (resolvedAddress && isValidAddress(resolvedAddress));
 
     return (
-      <div id="selectedUploadKey">
+      <div className="ViewOnly">
         <form className="form-group" onSubmit={this.openWallet}>
-          <TextArea
-            className={isValid ? 'is-valid' : 'is-invalid'}
-            value={address}
-            onChange={this.changeAddress}
-            onKeyDown={this.handleEnterKey}
-            placeholder={donationAddressMap.ETH}
-            rows={3}
-          />
-
-          <button className="btn btn-primary btn-block" disabled={!isValid}>
-            {translate('NAV_ViewWallet')}
-          </button>
+          <section className="ViewOnly-fields">
+            <section className="ViewOnly-fields-field">
+              <AddressField
+                value={addressFromBook}
+                showInputLabel={false}
+                showIdenticon={false}
+                showEnsResolution={false}
+                placeholder={translateRaw('SELECT_FROM_ADDRESS_BOOK')}
+                onChangeOverride={this.handleSelectAddressFromBook}
+                dropdownThreshold={0}
+              />
+            </section>
+            <section className="ViewOnly-fields-field">
+              <em>{translate('OR')}</em>
+            </section>
+            <section className="ViewOnly-fields-field">
+              <AddressField
+                showInputLabel={false}
+                showIdenticon={false}
+                placeholder={translateRaw('VIEW_ONLY_ENTER')}
+                data-testid="view-only-input"
+              />
+              <button
+                className="ViewOnly-submit btn btn-primary btn-block"
+                disabled={!isValid}
+                data-testid="view-only-button"
+              >
+                {translate('VIEW_ADDR')}
+              </button>
+            </section>
+          </section>
         </form>
       </div>
     );
   }
 
-  private changeAddress = (ev: React.FormEvent<HTMLTextAreaElement>) => {
-    this.setState({ address: ev.currentTarget.value });
+  private handleSelectAddressFromBook = (ev: React.FormEvent<HTMLInputElement>) => {
+    const {
+      currentTarget: { value: addressFromBook }
+    } = ev;
+    this.setState({ addressFromBook }, this.openWallet);
   };
 
-  private handleEnterKey = (ev: React.KeyboardEvent<HTMLElement>) => {
-    if (ev.keyCode === 13) {
-      this.openWallet(ev);
+  private openWallet = () => {
+    const { isValidAddress, currentAddress, resolvedAddress, onUnlock } = this.props;
+    const { addressFromBook } = this.state;
+
+    let wallet;
+
+    if (isValidAddress(addressFromBook)) {
+      wallet = addressFromBook;
+    } else if (isValidAddress(currentAddress.raw)) {
+      wallet = currentAddress.raw;
+    } else if (resolvedAddress && isValidAddress(resolvedAddress)) {
+      wallet = resolvedAddress;
     }
-  };
 
-  private openWallet = (ev: React.FormEvent<HTMLElement>) => {
-    const { address } = this.state;
-    ev.preventDefault();
-    if (isValidETHAddress(address)) {
-      const wallet = new AddressOnlyWallet(address);
-      this.props.onUnlock(wallet);
+    if (wallet) {
+      onUnlock(new AddressOnlyWallet(wallet));
     }
   };
 }
+
+export const ViewOnlyDecrypt = connect(
+  (state: AppState): StateProps => ({
+    currentAddress: selectors.getCurrentTo(state),
+    isValidAddress: configSelectors.getIsValidAddressFn(state),
+    resolvedAddress: ensSelectors.getResolvedAddress(state)
+  })
+)(ViewOnlyDecryptClass);

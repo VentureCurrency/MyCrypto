@@ -1,15 +1,15 @@
 import React from 'react';
 import classnames from 'classnames';
-import { translateRaw, TranslateType } from 'translations';
+
+import { WalletName } from 'config';
+import { translateRaw } from 'translations';
 import { NewTabLink, Tooltip } from 'components/ui';
 import './WalletButton.scss';
 
-import { WalletName } from 'config';
-
 interface OwnProps {
-  name: TranslateType;
-  description?: TranslateType;
-  example?: TranslateType;
+  name: string;
+  description?: string;
+  example?: string;
   icon?: string;
   helpLink: string;
   walletType: WalletName;
@@ -28,6 +28,7 @@ interface Icon {
   icon: string;
   tooltip: string;
   href?: string;
+  arialabel: string;
 }
 
 type Props = OwnProps & StateProps;
@@ -50,26 +51,30 @@ export class WalletButton extends React.PureComponent<Props> {
     if (isReadOnly) {
       icons.push({
         icon: 'eye',
-        tooltip: translateRaw('You cannot send using address only')
+        tooltip: translateRaw('TOOLTIP_READ_ONLY_WALLET'),
+        arialabel: 'Read Only'
       });
     } else {
       if (isSecure) {
         icons.push({
           icon: 'shield',
-          tooltip: translateRaw('This wallet type is secure')
+          tooltip: translateRaw('TOOLTIP_SECURE_WALLET_TYPE'),
+          arialabel: 'Secure wallet type'
         });
       } else {
         icons.push({
           icon: 'exclamation-triangle',
-          tooltip: translateRaw('This wallet type is insecure')
+          tooltip: translateRaw('TOOLTIP_INSECURE_WALLET_TYPE'),
+          arialabel: 'Insecure wallet type'
         });
       }
     }
     if (helpLink) {
       icons.push({
         icon: 'question-circle',
-        tooltip: translateRaw('NAV_Help'),
-        href: helpLink
+        tooltip: translateRaw('TOOLTIP_MORE_INFO'),
+        href: helpLink,
+        arialabel: 'More info'
       });
     }
 
@@ -86,26 +91,56 @@ export class WalletButton extends React.PureComponent<Props> {
       >
         <div className="WalletButton-inner">
           <div className="WalletButton-title">
-            {icon && <img className="WalletButton-title-icon" src={icon} />}
+            {icon && <img className="WalletButton-title-icon" src={icon} alt={name + ' logo'} />}
             <span>{name}</span>
           </div>
 
-          {description && <div className="WalletButton-description">{description}</div>}
-          {example && <div className="WalletButton-example">{example}</div>}
+          {description && (
+            <div className="WalletButton-description" aria-label="description">
+              {description}
+            </div>
+          )}
+          {example && (
+            <div className="WalletButton-example" aria-label="example" aria-hidden={true}>
+              {example}
+            </div>
+          )}
 
           <div className="WalletButton-icons">
-            {icons.map(i => (
-              <span className="WalletButton-icons-icon" key={i.icon} onClick={this.stopPropogation}>
-                {i.href ? (
-                  <NewTabLink href={i.href} onClick={this.stopPropogation}>
-                    <i className={`fa fa-${i.icon}`} />
-                  </NewTabLink>
-                ) : (
-                  <i className={`fa fa-${i.icon}`} />
-                )}
-                {!isDisabled && <Tooltip size="sm">{i.tooltip}</Tooltip>}
-              </span>
-            ))}
+            {icons.map(i => {
+              const IconWrapper = (props: any) => {
+                if (isDisabled) {
+                  return <React.Fragment>{props.children}</React.Fragment>;
+                }
+
+                if (i.href) {
+                  return (
+                    <NewTabLink
+                      href={i.href}
+                      onClick={this.stopPropagation}
+                      aria-label={i.arialabel}
+                    >
+                      {props.children}
+                    </NewTabLink>
+                  );
+                }
+
+                return props.children;
+              };
+
+              return (
+                <span
+                  className="WalletButton-icons-icon"
+                  key={i.icon}
+                  onClick={this.stopPropagation}
+                >
+                  <IconWrapper>
+                    <i className={`fa fa-${i.icon}`} aria-label={i.arialabel} />
+                  </IconWrapper>
+                  {!isDisabled && <Tooltip size="sm">{i.tooltip}</Tooltip>}
+                </span>
+              );
+            })}
           </div>
         </div>
 
@@ -122,7 +157,7 @@ export class WalletButton extends React.PureComponent<Props> {
     this.props.onClick(this.props.walletType);
   };
 
-  private stopPropogation = (ev: React.FormEvent<HTMLAnchorElement | HTMLSpanElement>) => {
+  private stopPropagation = (ev: React.FormEvent<HTMLAnchorElement | HTMLSpanElement>) => {
     ev.stopPropagation();
   };
 }

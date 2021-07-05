@@ -1,3 +1,5 @@
+import { Omit } from 'react-redux';
+
 import { checkHttpStatus, parseJSON } from './utils';
 
 const MAX_GAS_FAST = 250;
@@ -21,21 +23,33 @@ export interface GasEstimates {
   isDefault: boolean;
 }
 
+interface GasExpressResponse {
+  block_time: number;
+  blockNum: number;
+  fast: number;
+  fastest: number;
+  safeLow: number;
+  standard: number;
+}
+
 export function fetchGasEstimates(): Promise<GasEstimates> {
-  return fetch('https://dev.blockscale.net/api/gasexpress.json', {
+  return fetch('https://gas.mycryptoapi.com', {
     mode: 'cors'
   })
     .then(checkHttpStatus)
     .then(parseJSON)
-    .then((res: object) => {
+    .then((res: GasExpressResponse) => {
       // Make sure it looks like a raw gas estimate, and it has valid values
-      const keys = ['safeLow', 'standard', 'fast', 'fastest'];
+      const keys: (keyof Omit<GasExpressResponse, 'block_time' | 'blockNum'>)[] = [
+        'safeLow',
+        'standard',
+        'fast',
+        'fastest'
+      ];
       keys.forEach(key => {
         if (typeof res[key] !== 'number') {
           throw new Error(
-            `Gas estimate API has invalid shape: Expected numeric key '${key}' in response, got '${
-              res[key]
-            }' instead`
+            `Gas estimate API has invalid shape: Expected numeric key '${key}' in response, got '${res[key]}' instead`
           );
         }
       });
@@ -44,9 +58,7 @@ export function fetchGasEstimates(): Promise<GasEstimates> {
       const estimateRes = res as RawGasEstimates;
       if (estimateRes.fast > MAX_GAS_FAST) {
         throw new Error(
-          `Gas estimate response estimate too high: Max fast is ${MAX_GAS_FAST}, was given ${
-            estimateRes.fast
-          }`
+          `Gas estimate response estimate too high: Max fast is ${MAX_GAS_FAST}, was given ${estimateRes.fast}`
         );
       }
 
@@ -56,9 +68,7 @@ export function fetchGasEstimates(): Promise<GasEstimates> {
         estimateRes.fast > estimateRes.fastest
       ) {
         throw new Error(
-          `Gas esimates are in illogical order: should be safeLow < standard < fast < fastest, received ${
-            estimateRes.safeLow
-          } < ${estimateRes.standard} < ${estimateRes.fast} < ${estimateRes.fastest}`
+          `Gas esimates are in illogical order: should be safeLow < standard < fast < fastest, received ${estimateRes.safeLow} < ${estimateRes.standard} < ${estimateRes.fast} < ${estimateRes.fastest}`
         );
       }
 

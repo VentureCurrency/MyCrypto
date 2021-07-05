@@ -1,161 +1,146 @@
 import React, { Component } from 'react';
-import { Provider, connect } from 'react-redux';
-import { withRouter, Switch, Redirect, HashRouter, Route, BrowserRouter } from 'react-router-dom';
-// Components
-import Contracts from 'containers/Tabs/Contracts';
-import ENS from 'containers/Tabs/ENS';
-import GenerateWallet from 'containers/Tabs/GenerateWallet';
-import SendTransaction from 'containers/Tabs/SendTransaction';
-import Swap from 'containers/Tabs/Swap';
-import SignAndVerifyMessage from 'containers/Tabs/SignAndVerifyMessage';
-import BroadcastTx from 'containers/Tabs/BroadcastTx';
-import CheckTransaction from 'containers/Tabs/CheckTransaction';
-import ErrorScreen from 'components/ErrorScreen';
-import PageNotFound from 'components/PageNotFound';
-import LogOutPrompt from 'components/LogOutPrompt';
-import { TitleBar } from 'components/ui';
+import { setConfig } from 'react-hot-loader';
+import { hot } from 'react-hot-loader/root';
+import { connect, Provider } from 'react-redux';
 import { Store } from 'redux';
-import { pollOfflineStatus, TPollOfflineStatus } from 'actions/config';
-import { AppState } from 'reducers';
-import { RouteNotFound } from 'components/RouteNotFound';
-import { RedirectWithQuery } from 'components/RedirectWithQuery';
-import 'what-input';
-import { setUnitMeta, TSetUnitMeta } from 'actions/transaction';
-import { getNetworkUnit } from 'selectors/config';
+import { ThemeProvider } from 'styled-components';
+import { Theme } from 'config';
+import { QrSignerModal } from 'containers';
+import { configMetaSelectors, configSelectors } from 'features/config';
+import { AppState } from 'features/reducers';
+import { transactionMetaActions } from 'features/transaction';
+
+// v2
+import { GAU_THEME } from 'v2/theme';
+import { IS_DEV, IS_ELECTRON } from 'v2/utils';
+import { NewAppReleaseModal } from 'v2/components';
+import { DevModeProvider, useDevMode } from 'v2/services';
+import { DevTools } from 'v2/features';
+import AppProviders from './AppProviders';
+import { AppRouter } from './AppRouter';
 
 interface OwnProps {
   store: Store<AppState>;
 }
 
 interface StateProps {
-  networkUnit: string;
+  networkUnit: ReturnType<typeof configSelectors.getNetworkUnit>;
+  theme: ReturnType<typeof configMetaSelectors.getTheme>;
 }
 
 interface DispatchProps {
-  pollOfflineStatus: TPollOfflineStatus;
-  setUnitMeta: TSetUnitMeta;
+  setUnitMeta: transactionMetaActions.TSetUnitMeta;
 }
 
 type Props = OwnProps & StateProps & DispatchProps;
 
-interface State {
-  error: Error | null;
-}
-
-class RootClass extends Component<Props, State> {
-  public state = {
-    error: null
-  };
-
+class RootClass extends Component<Props> {
   public componentDidMount() {
-    this.props.pollOfflineStatus();
     this.props.setUnitMeta(this.props.networkUnit);
+    this.addBodyClasses();
+    this.updateTheme(this.props.theme);
   }
 
   public componentDidCatch(error: Error) {
-    this.setState({ error });
+    console.error(error);
+  }
+
+  public componentDidUpdate(prevProps: Props) {
+    if (this.props.theme !== prevProps.theme) {
+      this.updateTheme(this.props.theme, prevProps.theme);
+    }
   }
 
   public render() {
     const { store } = this.props;
-    const { error } = this.state;
-
-    if (error) {
-      return <ErrorScreen error={error} />;
-    }
-
-    const CaptureRouteNotFound = withRouter(({ children, location }) => {
-      return location && location.state && location.state.error ? (
-        <PageNotFound />
-      ) : (
-        (children as JSX.Element)
-      );
-    });
-
-    const routes = (
-      <CaptureRouteNotFound>
-        <Switch>
-          <Redirect exact={true} from="/" to="/account" />
-          <Route path="/account" component={SendTransaction} />
-          <Route path="/generate" component={GenerateWallet} />
-          <Route path="/swap" component={Swap} />
-          <Route path="/contracts" component={Contracts} />
-          <Route path="/ens" component={ENS} exact={true} />
-          <Route path="/sign-and-verify-message" component={SignAndVerifyMessage} />
-          <Route path="/tx-status" component={CheckTransaction} exact={true} />
-          <Route path="/pushTx" component={BroadcastTx} />
-          <RouteNotFound />
-        </Switch>
-      </CaptureRouteNotFound>
-    );
-
-    const Router =
-      process.env.BUILD_DOWNLOADABLE && process.env.NODE_ENV === 'production'
-        ? HashRouter
-        : BrowserRouter;
 
     return (
-      <Provider store={store} key={Math.random()}>
-        <Router key={Math.random()}>
-          <React.Fragment>
-            {process.env.BUILD_ELECTRON && <TitleBar />}
-            {routes}
-            <LegacyRoutes />
-            <LogOutPrompt />
-          </React.Fragment>
-        </Router>
-      </Provider>
+      <DevModeProvider>
+        <ThemeProvider theme={GAU_THEME}>
+          <Provider store={store}>
+            <AppProviders>
+              <AppRouter />
+              <QrSignerModal />
+              <div id="ModalContainer" />
+              {IS_ELECTRON ? <NewAppReleaseModal /> : <></>}
+              {IS_DEV ? (
+                <>
+                  <DevToolsContainer />
+                  <DevModeToggle />
+                </>
+              ) : (
+                <></>
+              )}
+            </AppProviders>
+          </Provider>
+        </ThemeProvider>
+      </DevModeProvider>
     );
+  }
+
+  private addBodyClasses() {
+    const classes: string[] = [];
+
+    if (IS_ELECTRON) {
+      classes.push('is-electron');
+
+      if (navigator.appVersion.includes('Win')) {
+        classes.push('is-windows');
+      } else if (navigator.appVersion.includes('Mac')) {
+        classes.push('is-osx');
+      } else {
+        classes.push('is-linux');
+      }
+    }
+
+    document.body.className += ` ${classes.join(' ')}`;
+  }
+
+  private updateTheme(theme: Theme, oldTheme?: Theme) {
+    const root = document.documentElement;
+    if (oldTheme) {
+      root.classList.remove(`theme--${oldTheme}`);
+    }
+    root.classList.add(`theme--${theme}`);
   }
 }
 
-const LegacyRoutes = withRouter(props => {
-  const { history } = props;
-  const { pathname } = props.location;
-  let { hash } = props.location;
-
-  if (pathname === '/') {
-    hash = hash.split('?')[0];
-    switch (hash) {
-      case '#send-transaction':
-      case '#offline-transaction':
-        return <RedirectWithQuery from={pathname} to={'account/send'} />;
-      case '#generate-wallet':
-        history.push('/');
-        break;
-      case '#swap':
-        history.push('/swap');
-        break;
-      case '#contracts':
-        history.push('/contracts');
-        break;
-      case '#ens':
-        history.push('/ens');
-        break;
-      case '#view-wallet-info':
-        history.push('/account/info');
-        break;
-      case '#check-tx-status':
-        return <RedirectWithQuery from={pathname} to={'/tx-status'} />;
-    }
-  }
-
+const DevModeToggle = () => {
+  const { isDevelopmentMode, toggleDevMode } = useDevMode();
   return (
-    <Switch>
-      <RedirectWithQuery from="/signmsg.html" to="/sign-and-verify-message" />
-      <RedirectWithQuery from="/helpers.html" to="/helpers" />
-      <RedirectWithQuery from="/send-transaction" to={'/account/send'} />
-    </Switch>
+    <button
+      onClick={toggleDevMode}
+      style={{
+        position: 'fixed',
+        bottom: 0,
+        right: 0,
+        zIndex: 99,
+        height: '5rem'
+      }}
+    >
+      Development Mode {isDevelopmentMode ? 'On' : 'Off'}
+    </button>
   );
-});
-
-const mapStateToProps = (state: AppState) => {
-  return {
-    networkUnit: getNetworkUnit(state)
-  };
 };
 
-export default connect(mapStateToProps, {
-  pollOfflineStatus,
-  setUnitMeta
-})(RootClass);
+const DevToolsContainer = () => {
+  const { isDevelopmentMode } = useDevMode();
+  return isDevelopmentMode ? <DevTools /> : <></>;
+};
+
+const mapStateToProps = (state: AppState): StateProps => ({
+  networkUnit: configSelectors.getNetworkUnit(state),
+  theme: configMetaSelectors.getTheme(state)
+});
+
+const ConnectedRoot = connect(
+  mapStateToProps,
+  {
+    setUnitMeta: transactionMetaActions.setUnitMeta
+  }
+)(RootClass);
+
+// Silence RHL 'reconciliation failed' errors
+// https://github.com/gatsbyjs/gatsby/issues/7209#issuecomment-415807021
+setConfig({ logLevel: 'no-errors-please' });
+export default hot(ConnectedRoot);

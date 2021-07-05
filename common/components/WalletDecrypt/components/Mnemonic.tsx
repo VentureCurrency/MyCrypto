@@ -1,14 +1,15 @@
-import { mnemonicToSeed, validateMnemonic } from 'bip39';
 import React, { PureComponent } from 'react';
-import translate, { translateRaw } from 'translations';
-import DeterministicWalletsModal from './DeterministicWalletsModal';
-import { formatMnemonic } from 'utils/formatters';
-import { InsecureWalletName } from 'config';
-import { AppState } from 'reducers';
 import { connect } from 'react-redux';
-import { getSingleDPath, getPaths } from 'selectors/config/wallet';
+import { mnemonicToSeed, validateMnemonic } from 'bip39';
+
+import { InsecureWalletName } from 'config';
+import translate, { translateRaw } from 'translations';
+import { formatMnemonic } from 'utils/formatters';
+import { AppState } from 'features/reducers';
+import { configSelectors, configNetworksStaticSelectors } from 'features/config';
 import { TogglablePassword } from 'components';
 import { Input } from 'components/ui';
+import DeterministicWalletsModal from './DeterministicWalletsModal';
 
 interface OwnProps {
   onUnlock(param: any): void;
@@ -26,7 +27,7 @@ interface State {
   formattedPhrase: string;
   pass: string;
   seed: string;
-  dPath: string;
+  dPath: DPath;
 }
 
 class MnemonicDecryptClass extends PureComponent<Props, State> {
@@ -35,12 +36,12 @@ class MnemonicDecryptClass extends PureComponent<Props, State> {
     formattedPhrase: '',
     pass: '',
     seed: '',
-    dPath: this.props.dPath.value
+    dPath: this.props.dPath
   };
 
-  public componentWillReceiveProps(nextProps: Props) {
+  public UNSAFE_componentWillReceiveProps(nextProps: Props) {
     if (this.props.dPath !== nextProps.dPath) {
-      this.setState({ dPath: nextProps.dPath.value });
+      this.setState({ dPath: nextProps.dPath });
     }
   }
 
@@ -49,25 +50,27 @@ class MnemonicDecryptClass extends PureComponent<Props, State> {
     const isValidMnemonic = validateMnemonic(formattedPhrase);
 
     return (
-      <div>
+      <React.Fragment>
         <div id="selectedTypeKey">
           <div className="form-group">
             <TogglablePassword
               value={phrase}
               rows={4}
-              placeholder={translateRaw('x_Mnemonic')}
+              placeholder={translateRaw('X_MNEMONIC')}
               isValid={isValidMnemonic}
               isTextareaWhenVisible={true}
               onChange={this.onMnemonicChange}
-              onEnter={isValidMnemonic && this.onDWModalOpen}
+              onEnter={isValidMnemonic ? this.onDWModalOpen : undefined}
             />
           </div>
           <div className="form-group">
-            <p>Password (optional):</p>
+            <p>{translate('ADD_LABEL_8')}</p>
             <Input
+              isValid={true}
+              showValidAsPlain={true}
               value={pass}
               onChange={this.onPasswordChange}
-              placeholder={translateRaw('x_Password')}
+              placeholder={translateRaw('INPUT_PASSWORD_LABEL')}
               type="password"
             />
           </div>
@@ -78,7 +81,7 @@ class MnemonicDecryptClass extends PureComponent<Props, State> {
               className="btn btn-primary btn-lg"
               disabled={!isValidMnemonic}
             >
-              {translate('Choose Address')}
+              {translate('MNEMONIC_CHOOSE_ADDR')}
             </button>
           </div>
         </div>
@@ -91,9 +94,8 @@ class MnemonicDecryptClass extends PureComponent<Props, State> {
           onCancel={this.handleCancel}
           onConfirmAddress={this.handleUnlock}
           onPathChange={this.handlePathChange}
-          walletType={translateRaw('x_Mnemonic')}
         />
-      </div>
+      </React.Fragment>
     );
   }
 
@@ -122,7 +124,7 @@ class MnemonicDecryptClass extends PureComponent<Props, State> {
       const seed = mnemonicToSeed(formattedPhrase, pass).toString('hex');
       this.setState({ seed });
     } catch (err) {
-      console.log(err);
+      console.error(err);
     }
   };
 
@@ -130,15 +132,15 @@ class MnemonicDecryptClass extends PureComponent<Props, State> {
     this.setState({ seed: '' });
   };
 
-  private handlePathChange = (dPath: string) => {
+  private handlePathChange = (dPath: DPath) => {
     this.setState({ dPath });
   };
 
-  private handleUnlock = (address, index) => {
+  private handleUnlock = (address: string, index: number) => {
     const { formattedPhrase, pass, dPath } = this.state;
 
     this.props.onUnlock({
-      path: `${dPath}/${index}`,
+      path: `${dPath.value}/${index}`,
       pass,
       phrase: formattedPhrase,
       address
@@ -155,8 +157,9 @@ class MnemonicDecryptClass extends PureComponent<Props, State> {
 
 function mapStateToProps(state: AppState): StateProps {
   return {
-    dPath: getSingleDPath(state, InsecureWalletName.MNEMONIC_PHRASE),
-    dPaths: getPaths(state, InsecureWalletName.MNEMONIC_PHRASE)
+    // Mnemonic dPath is guaranteed to always be provided
+    dPath: configSelectors.getSingleDPath(state, InsecureWalletName.MNEMONIC_PHRASE) as DPath,
+    dPaths: configNetworksStaticSelectors.getPaths(state, InsecureWalletName.MNEMONIC_PHRASE)
   };
 }
 

@@ -1,27 +1,22 @@
 import React from 'react';
-import BN from 'bn.js';
-import { translateRaw } from 'translations';
 import { connect } from 'react-redux';
-import {
-  inputGasPrice,
-  TInputGasPrice,
-  inputGasPriceIntent,
-  TInputGasPriceIntent,
-  getNonceRequested,
-  TGetNonceRequested,
-  reset,
-  TReset,
-  ResetAction
-} from 'actions/transaction';
-import { fetchCCRatesRequested, TFetchCCRatesRequested } from 'actions/rates';
-import { getNetworkConfig, getOffline } from 'selectors/config';
-import { AppState } from 'reducers';
-import { Units } from 'libs/units';
-import SimpleGas from './components/SimpleGas';
-import AdvancedGas, { AdvancedOptions } from './components/AdvancedGas';
-import './TXMetaDataPanel.scss';
-import { getGasPrice } from 'selectors/transaction';
+import BN from 'bn.js';
+
+import { translateRaw } from 'translations';
 import { NetworkConfig } from 'types/network';
+import { Units } from 'libs/units';
+import { isAdvancedQueryTransaction } from 'utils/helpers';
+import { AppState } from 'features/reducers';
+import { configSelectors, configMetaSelectors } from 'features/config';
+import {
+  transactionFieldsActions,
+  transactionFieldsSelectors,
+  transactionNetworkActions
+} from 'features/transaction';
+import { ratesActions } from 'features/rates';
+import AdvancedGas, { AdvancedOptions } from './components/AdvancedGas';
+import SimpleGas from './components/SimpleGas';
+import './TXMetaDataPanel.scss';
 
 type SliderStates = 'simple' | 'advanced';
 
@@ -32,11 +27,11 @@ interface StateProps {
 }
 
 interface DispatchProps {
-  inputGasPrice: TInputGasPrice;
-  inputGasPriceIntent: TInputGasPriceIntent;
-  fetchCCRates: TFetchCCRatesRequested;
-  getNonceRequested: TGetNonceRequested;
-  reset: TReset;
+  inputGasPrice: transactionFieldsActions.TInputGasPrice;
+  inputGasPriceIntent: transactionFieldsActions.TInputGasPriceIntent;
+  fetchCCRates: ratesActions.TFetchCCRatesRequested;
+  getNonceRequested: transactionNetworkActions.TGetNonceRequested;
+  resetTransactionRequested: transactionFieldsActions.TResetTransactionRequested;
 }
 
 // Set default props for props that can't be truthy or falsy
@@ -45,11 +40,11 @@ interface DefaultProps {
 }
 
 interface OwnProps {
-  resetIncludeExcludeProperties?: ResetAction['payload'];
   initialState?: SliderStates;
   disableToggle?: boolean;
   advancedGasOptions?: AdvancedOptions;
   className?: string;
+  scheduling?: boolean;
 }
 
 type Props = DispatchProps & OwnProps & StateProps;
@@ -69,15 +64,20 @@ class TXMetaDataPanel extends React.Component<Props, State> {
     sliderState: (this.props as DefaultProps).initialState
   };
 
+  public componentWillMount() {
+    if (!this.props.offline) {
+      this.props.resetTransactionRequested();
+    }
+  }
+
   public componentDidMount() {
     if (!this.props.offline) {
-      this.props.reset(this.props.resetIncludeExcludeProperties);
       this.props.fetchCCRates([this.props.network.unit]);
       this.props.getNonceRequested();
     }
   }
 
-  public componentWillReceiveProps(nextProps: Props) {
+  public UNSAFE_componentWillReceiveProps(nextProps: Props) {
     if (
       (this.props.offline && !nextProps.offline) ||
       this.props.network.unit !== nextProps.network.unit
@@ -90,16 +90,20 @@ class TXMetaDataPanel extends React.Component<Props, State> {
   }
 
   public render() {
-    const { offline, disableToggle, advancedGasOptions, className = '' } = this.props;
+    const { offline, disableToggle, advancedGasOptions, className = '', scheduling } = this.props;
     const { gasPrice } = this.state;
-    const showAdvanced = this.state.sliderState === 'advanced' || offline;
+    const queryTransaction = isAdvancedQueryTransaction(location.search);
+    const showAdvanced = this.state.sliderState === 'advanced' || queryTransaction || offline;
+
     return (
       <div className={`Gas col-md-12 ${className}`}>
+        <br />
         {showAdvanced ? (
           <AdvancedGas
             gasPrice={gasPrice}
             inputGasPrice={this.props.inputGasPrice}
             options={advancedGasOptions}
+            scheduling={scheduling}
           />
         ) : (
           <SimpleGas
@@ -109,16 +113,15 @@ class TXMetaDataPanel extends React.Component<Props, State> {
           />
         )}
 
-        {!offline &&
-          !disableToggle && (
-            <div className="help-block">
-              <a className="Gas-toggle" onClick={this.toggleAdvanced}>
-                {showAdvanced
-                  ? `- ${translateRaw('Back to simple')}`
-                  : `+ ${translateRaw('Advanced Settings')}`}
-              </a>
-            </div>
-          )}
+        {!offline && !disableToggle && (
+          <div className="help-block">
+            <a className="Gas-toggle" onClick={this.toggleAdvanced}>
+              {showAdvanced
+                ? `- ${translateRaw('TRANS_SIMPLE')}`
+                : `+ ${translateRaw('TRANS_ADVANCED')}`}
+            </a>
+          </div>
+        )}
       </div>
     );
   }
@@ -141,16 +144,19 @@ class TXMetaDataPanel extends React.Component<Props, State> {
 
 function mapStateToProps(state: AppState): StateProps {
   return {
-    gasPrice: getGasPrice(state),
-    offline: getOffline(state),
-    network: getNetworkConfig(state)
+    gasPrice: transactionFieldsSelectors.getGasPrice(state),
+    offline: configMetaSelectors.getOffline(state),
+    network: configSelectors.getNetworkConfig(state)
   };
 }
 
-export default connect(mapStateToProps, {
-  inputGasPrice,
-  inputGasPriceIntent,
-  fetchCCRates: fetchCCRatesRequested,
-  getNonceRequested,
-  reset
-})(TXMetaDataPanel);
+export default connect(
+  mapStateToProps,
+  {
+    inputGasPrice: transactionFieldsActions.inputGasPrice,
+    inputGasPriceIntent: transactionFieldsActions.inputGasPriceIntent,
+    fetchCCRates: ratesActions.fetchCCRatesRequested,
+    getNonceRequested: transactionNetworkActions.getNonceRequested,
+    resetTransactionRequested: transactionFieldsActions.resetTransactionRequested
+  }
+)(TXMetaDataPanel);

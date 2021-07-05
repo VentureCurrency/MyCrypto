@@ -1,35 +1,40 @@
 import React from 'react';
-import { AmountFieldFactory } from './AmountFieldFactory';
-import { UnitDropDown } from 'components';
-import translate, { translateRaw } from 'translations';
+
+import translate from 'translations';
+import { UnitDropDown, SendEverything } from 'components';
 import { Input } from 'components/ui';
+import { AmountFieldFactory } from './AmountFieldFactory';
 
 interface Props {
   hasUnitDropdown?: boolean;
+  hasSendEverything?: boolean;
   showAllTokens?: boolean;
+  showInvalidWithoutValue?: boolean;
   customValidator?(rawAmount: string): boolean;
 }
 
 export const AmountField: React.SFC<Props> = ({
   hasUnitDropdown,
+  hasSendEverything,
   showAllTokens,
-  customValidator
+  customValidator,
+  showInvalidWithoutValue
 }) => (
   <AmountFieldFactory
     withProps={({ currentValue: { raw }, isValid, onChange, readOnly }) => (
-      <div className="input-group-wrapper">
-        <label className="input-group input-group-inline-dropdown">
-          <div className="input-group-header">{translate('SEND_amount')}</div>
+      <div className="AmountField input-group-wrapper">
+        <label className="AmountField-group input-group input-group-inline">
+          <div className="input-group-header">{translate('SEND_AMOUNT_SHORT')}</div>
           <Input
-            className={`input-group-input ${
-              isAmountValid(raw, customValidator, isValid) ? '' : 'invalid'
-            }`}
+            isValid={isAmountValid(raw, customValidator, isValid)}
             type="number"
-            placeholder={translateRaw('SEND_amount_short')}
+            placeholder="1"
             value={raw}
             readOnly={!!readOnly}
             onChange={onChange}
+            showInvalidWithoutValue={showInvalidWithoutValue}
           />
+          {hasSendEverything && <SendEverything />}
           {hasUnitDropdown && <UnitDropDown showAllTokens={showAllTokens} />}
         </label>
       </div>
@@ -37,5 +42,8 @@ export const AmountField: React.SFC<Props> = ({
   />
 );
 
-const isAmountValid = (raw, customValidator, isValid) =>
-  customValidator ? customValidator(raw) : isValid;
+const isAmountValid = (
+  raw: string,
+  customValidator: ((rawAmount: string) => boolean) | undefined,
+  isValid: boolean
+) => (customValidator ? customValidator(raw) : isValid);

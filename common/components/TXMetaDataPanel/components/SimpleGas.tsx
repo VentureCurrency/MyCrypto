@@ -1,27 +1,26 @@
 import React from 'react';
-import Slider from 'rc-slider';
+import { connect } from 'react-redux';
+import Slider, { createSliderWithTooltip, Marks } from 'rc-slider';
+
+import { gasPriceDefaults } from 'config';
 import translate, { translateRaw } from 'translations';
+import { Wei, fromWei } from 'libs/units';
+import { AppState } from 'features/reducers';
+import { configNodesSelectors } from 'features/config';
+import { transactionFieldsActions, transactionNetworkSelectors } from 'features/transaction';
+import { gasActions, gasSelectors } from 'features/gas';
+import { scheduleSelectors } from 'features/schedule';
+import { InlineSpinner } from 'components/ui/InlineSpinner';
 import FeeSummary from './FeeSummary';
 import './SimpleGas.scss';
-import { AppState } from 'reducers';
-import {
-  getGasLimitEstimationTimedOut,
-  getGasEstimationPending,
-  nonceRequestPending
-} from 'selectors/transaction';
-import { connect } from 'react-redux';
-import { fetchGasEstimates, TFetchGasEstimates } from 'actions/gas';
-import { getIsWeb3Node } from 'selectors/config';
-import { getEstimates, getIsEstimating } from 'selectors/gas';
-import { Wei, fromWei } from 'libs/units';
-import { gasPriceDefaults } from 'config';
-import { InlineSpinner } from 'components/ui/InlineSpinner';
-const SliderWithTooltip = Slider.createSliderWithTooltip(Slider);
+
+const SliderWithTooltip = createSliderWithTooltip(Slider);
 
 interface OwnProps {
   gasPrice: AppState['transaction']['fields']['gasPrice'];
-  inputGasPrice(rawGas: string);
-  setGasPrice(rawGas: string);
+  setGasPrice: transactionFieldsActions.TInputGasPrice;
+
+  inputGasPrice(rawGas: string): void;
 }
 
 interface StateProps {
@@ -31,22 +30,35 @@ interface StateProps {
   gasLimitPending: boolean;
   isWeb3Node: boolean;
   gasLimitEstimationTimedOut: boolean;
+  scheduleGasPrice: AppState['schedule']['scheduleGasPrice'];
 }
 
 interface ActionProps {
-  fetchGasEstimates: TFetchGasEstimates;
+  fetchGasEstimates: gasActions.TFetchGasEstimates;
 }
 
 type Props = OwnProps & StateProps & ActionProps;
 
+interface State {
+  hasSetRecommendedGasPrice: boolean;
+}
+
+interface GasTooltips {
+  [estimationLevel: string]: string;
+}
+
 class SimpleGas extends React.Component<Props> {
+  public state: State = {
+    hasSetRecommendedGasPrice: false
+  };
+
   public componentDidMount() {
-    this.fixGasPrice();
     this.props.fetchGasEstimates();
   }
 
-  public componentWillReceiveProps(nextProps: Props) {
-    if (!this.props.gasEstimates && nextProps.gasEstimates) {
+  public UNSAFE_componentWillReceiveProps(nextProps: Props) {
+    if (!this.state.hasSetRecommendedGasPrice && nextProps.gasEstimates) {
+      this.setState({ hasSetRecommendedGasPrice: true });
       this.props.setGasPrice(nextProps.gasEstimates.fast.toString());
     }
   }
@@ -59,7 +71,8 @@ class SimpleGas extends React.Component<Props> {
       gasLimitEstimationTimedOut,
       isWeb3Node,
       noncePending,
-      gasLimitPending
+      gasLimitPending,
+      scheduleGasPrice
     } = this.props;
 
     const bounds = {
@@ -67,11 +80,23 @@ class SimpleGas extends React.Component<Props> {
       min: gasEstimates ? gasEstimates.safeLow : gasPriceDefaults.min
     };
 
+    const gasNotches = this.makeGasNotches();
+
+    /**
+     * @desc On retrieval of gas estimates,
+     *  the current gas price may be lower than the lowest recommended price.
+     *  `rc-slider` will force the onChange if the value is too low, so we
+     *  ensure it at least passes the lower boundary.
+     *  When this occurs, the logic in `UNSAFE_componentWillReceiveProps` fires,
+     *  and it cannot happen again from that point forward.
+     */
+    const actualGasPrice = Math.max(this.getGasPriceGwei(gasPrice.value), bounds.min);
+
     return (
       <div className="SimpleGas row form-group">
         <div className="SimpleGas-title">
           <div className="flex-wrapper">
-            <label>{translateRaw('Transaction Fee')} </label>
+            <label>{translate('CONFIRM_TX_FEE')} </label>
             <div className="flex-spacer" />
             <InlineSpinner active={noncePending || gasLimitPending} text="Calculating" />
           </div>
@@ -93,18 +118,21 @@ class SimpleGas extends React.Component<Props> {
               onChange={this.handleSlider}
               min={bounds.min}
               max={bounds.max}
+              marks={gasNotches}
+              included={false}
               step={bounds.min < 1 ? 0.1 : 1}
-              value={this.getGasPriceGwei(gasPrice.value)}
+              value={actualGasPrice}
               tipFormatter={this.formatTooltip}
               disabled={isGasEstimating}
             />
             <div className="SimpleGas-slider-labels">
-              <span>{translate('Cheap')}</span>
-              <span>{translate('Fast')}</span>
+              <span>{translate('TX_FEE_SCALE_LEFT')}</span>
+              <span>{translate('TX_FEE_SCALE_RIGHT')}</span>
             </div>
           </div>
           <FeeSummary
             gasPrice={gasPrice}
+            scheduleGasPrice={scheduleGasPrice}
             render={({ fee, usd }) => (
               <span>
                 {fee} {usd && <span>/ ${usd}</span>}
@@ -120,46 +148,57 @@ class SimpleGas extends React.Component<Props> {
     this.props.inputGasPrice(gasGwei.toString());
   };
 
-  private fixGasPrice() {
-    const { gasPrice, gasEstimates } = this.props;
-    if (!gasEstimates) {
-      return;
-    }
-
-    // If the gas price is above or below our minimum, bring it in line
-    const gasPriceGwei = this.getGasPriceGwei(gasPrice.value);
-    if (gasPriceGwei < gasEstimates.safeLow) {
-      this.props.setGasPrice(gasEstimates.safeLow.toString());
-    } else if (gasPriceGwei > gasEstimates.fastest) {
-      this.props.setGasPrice(gasEstimates.fastest.toString());
-    }
-  }
-
   private getGasPriceGwei(gasPriceValue: Wei) {
     return parseFloat(fromWei(gasPriceValue, 'gwei'));
   }
 
+  private makeGasNotches = (): Marks => {
+    const { gasEstimates } = this.props;
+
+    return gasEstimates
+      ? {
+          [gasEstimates.safeLow]: '',
+          [gasEstimates.standard]: '',
+          [gasEstimates.fast]: '',
+          [gasEstimates.fastest]: ''
+        }
+      : {};
+  };
+
   private formatTooltip = (gas: number) => {
     const { gasEstimates } = this.props;
-    let recommended = '';
-    if (gasEstimates && !gasEstimates.isDefault && gas === gasEstimates.fast) {
-      recommended = '(Recommended)';
+
+    if (!(gasEstimates && !gasEstimates.isDefault)) {
+      return '';
     }
 
-    return `${gas} Gwei ${recommended}`;
+    const gasTooltips: GasTooltips = {
+      [gasEstimates.fast]: translateRaw('TX_FEE_RECOMMENDED_FAST'),
+      [gasEstimates.fastest]: translateRaw('TX_FEE_RECOMMENDED_FASTEST'),
+      [gasEstimates.safeLow]: translateRaw('TX_FEE_RECOMMENDED_SAFELOW'),
+      [gasEstimates.standard]: translateRaw('TX_FEE_RECOMMENDED_STANDARD')
+    };
+
+    const recommended = gasTooltips[gas] || '';
+
+    return translateRaw('GAS_GWEI_COST', {
+      $gas: gas.toString(),
+      $recommended: recommended
+    });
   };
 }
 
 export default connect(
   (state: AppState): StateProps => ({
-    gasEstimates: getEstimates(state),
-    isGasEstimating: getIsEstimating(state),
-    noncePending: nonceRequestPending(state),
-    gasLimitPending: getGasEstimationPending(state),
-    gasLimitEstimationTimedOut: getGasLimitEstimationTimedOut(state),
-    isWeb3Node: getIsWeb3Node(state)
+    gasEstimates: gasSelectors.getEstimates(state),
+    isGasEstimating: gasSelectors.getIsEstimating(state),
+    noncePending: transactionNetworkSelectors.nonceRequestPending(state),
+    gasLimitPending: transactionNetworkSelectors.getGasEstimationPending(state),
+    gasLimitEstimationTimedOut: transactionNetworkSelectors.getGasLimitEstimationTimedOut(state),
+    isWeb3Node: configNodesSelectors.getIsWeb3Node(state),
+    scheduleGasPrice: scheduleSelectors.getScheduleGasPrice(state)
   }),
   {
-    fetchGasEstimates
+    fetchGasEstimates: gasActions.fetchGasEstimates
   }
 )(SimpleGas);

@@ -6,15 +6,13 @@ const threadLoader = require('thread-loader');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 const FriendlyErrorsPlugin = require('friendly-errors-webpack-plugin');
-const AutoDllPlugin = require('autodll-webpack-plugin');
+const WebappWebpackPlugin = require('webapp-webpack-plugin');
+// const AutoDllPlugin = require('autodll-webpack-plugin');
 const HardSourceWebpackPlugin = require('hard-source-webpack-plugin');
-const FaviconsWebpackPlugin = require('favicons-webpack-plugin');
-const ExtractTextPlugin = require('extract-text-webpack-plugin');
 const ProgressPlugin = require('webpack/lib/ProgressPlugin');
-const BabelMinifyPlugin = require('babel-minify-webpack-plugin');
 const SriPlugin = require('webpack-subresource-integrity');
+const MiniCSSExtractPlugin = require('mini-css-extract-plugin');
 const ClearDistPlugin = require('./plugins/clearDist');
-const SortCachePlugin = require('./plugins/sortCache');
 
 const config = require('./config');
 
@@ -33,6 +31,7 @@ module.exports = function(opts = {}) {
   // ====== Entry =======
   // ====================
   const entry = {
+    badBrowserCheck: './common/badBrowserCheck.ts',
     client: './common/index.tsx'
   };
 
@@ -66,50 +65,42 @@ module.exports = function(opts = {}) {
     });
   }
 
-  // Styles (CSS, SCSS, LESS)
+  // Styles (CSS, SCSS)
+  const sassLoader = {
+    loader: 'sass-loader',
+    options: {
+      data: `$is-electron: ${options.isElectronBuild};`
+    }
+  };
+
   if (options.isProduction) {
     rules.push(
       {
         test: /\.css$/,
-        use: ExtractTextPlugin.extract({
-          fallback: 'style-loader',
-          use: 'css-loader'
-        })
+        use: [MiniCSSExtractPlugin.loader, 'css-loader']
       },
       {
         test: /\.scss$/,
-        use: ExtractTextPlugin.extract({
-          fallback: 'style-loader',
-          use: ['css-loader', 'sass-loader']
-        })
-      },
-      {
-        test: /\.less$/,
-        use: ExtractTextPlugin.extract({
-          fallback: 'style-loader',
-          use: ['css-loader', 'less-loader']
-        })
+        use: [MiniCSSExtractPlugin.loader, 'css-loader', sassLoader]
       }
     );
   } else {
     rules.push(
       {
         test: /\.css$/,
-        include: path.resolve(config.path.src, 'vendor'),
+        include: [
+          path.resolve(config.path.src, 'vendor'),
+          path.resolve(__dirname, '../node_modules/typeface-lato')
+        ],
         use: ['style-loader', 'css-loader']
       },
       {
         test: /\.scss$/,
-        include: ['components', 'containers', 'sass']
+        include: ['components', 'containers', 'sass', 'v2']
           .map(dir => path.resolve(config.path.src, dir))
           .concat([config.path.modules]),
 
-        use: ['style-loader', 'css-loader', 'sass-loader']
-      },
-      {
-        test: /\.less$/,
-        include: path.resolve(config.path.assets, 'styles'),
-        use: ['style-loader', 'css-loader', 'less-loader']
+        use: ['style-loader', 'css-loader', sassLoader]
       }
     );
   }
@@ -161,14 +152,32 @@ module.exports = function(opts = {}) {
     loader: 'file-loader'
   });
 
+  // Browser check
+  rules.push({
+    test: /\.modernizrrc\.js$/,
+    loader: 'webpack-modernizr-loader',
+    type: 'javascript/auto'
+  });
+
   // ====================
   // ====== Plugins =====
   // ====================
   const plugins = [
     new HtmlWebpackPlugin({
-      title: config.title,
       template: path.resolve(config.path.src, 'index.html'),
-      inject: true
+      inject: true,
+      title: config.title,
+      appDescription: config.description,
+      appUrl: config.url,
+      image: config.img,
+      type: config.type,
+      twitter: {
+        site: config.twitter.creator,
+        creator: config.twitter.creator
+      },
+      metaCsp: options.isProduction
+        ? "default-src 'none'; script-src 'self' https://0x.mycrypto.com; worker-src 'self' blob:; child-src 'self'; style-src 'self' 'unsafe-inline' https://0x.mycrypto.com; manifest-src 'self'; font-src 'self' https://0x.mycrypto.com; img-src 'self' data: https://shapeshift.io https://cdn.mycryptoapi.com/; connect-src *; frame-src 'self' https://connect.trezor.io;"
+        : ''
     }),
 
     new CopyWebpackPlugin([
@@ -176,6 +185,10 @@ module.exports = function(opts = {}) {
         from: config.path.static,
         // to the root of dist path
         to: './'
+      },
+      {
+        from: path.resolve(config.path.assets, 'images/link-preview.png'),
+        to: './common/assets/images'
       }
     ]),
 
@@ -198,57 +211,45 @@ module.exports = function(opts = {}) {
 
   if (options.isProduction) {
     plugins.push(
-      new BabelMinifyPlugin(
-        {
-          // Mangle seems to be reusing variable identifiers, causing errors
-          mangle: false,
-          // These two on top of a lodash file are causing illegal characters for
-          // safari and ios browsers
-          evaluate: false,
-          propertyLiterals: false
-        },
-        {
-          comments: false
-        }
-      ),
-      new webpack.optimize.CommonsChunkPlugin({
-        name: 'vendor',
-        filename: 'vendor.[chunkhash:8].js'
+      new MiniCSSExtractPlugin({
+        filename: `[name].[contenthash:8].css`
       }),
-      new ExtractTextPlugin('[name].[chunkhash:8].css'),
-      new FaviconsWebpackPlugin({
+      new WebappWebpackPlugin({
         logo: path.resolve(config.path.assets, 'images/favicon.png'),
-        background: '#163151',
-        inject: true
+        cacheDirectory: false, // Cache makes builds nondeterministic
+        inject: true,
+        prefix: 'common/assets/meta-[hash]',
+        favicons: {
+          appDescription: 'Ethereum web interface',
+          display: 'standalone',
+          theme_color: '#007896'
+        }
       }),
       new SriPlugin({
         hashFuncNames: ['sha256', 'sha384'],
         enabled: true
       }),
       new ProgressPlugin(),
-      new ClearDistPlugin(),
-      new SortCachePlugin()
+      new ClearDistPlugin()
     );
   } else {
     plugins.push(
-      new AutoDllPlugin({
-        inject: true, // will inject the DLL bundles to index.html
-        filename: '[name]_[hash].js',
-        debug: true,
-        context: path.join(config.path.root),
-        entry: {
-          vendor: [...config.vendorModules, 'babel-polyfill', 'bootstrap-sass', 'font-awesome']
-        }
-      }),
+      // new AutoDllPlugin({
+      //   inject: true, // will inject the DLL bundles to index.html
+      //   filename: '[name]_[hash].js',
+      //   debug: true,
+      //   context: path.join(config.path.root),
+      //   entry: {
+      //     vendor: [...config.vendorModules, 'babel-polyfill', 'bootstrap-sass', 'font-awesome']
+      //   }
+      // }),
       new HardSourceWebpackPlugin({
         environmentHash: {
           root: process.cwd(),
-          directories: ['webpack_config'],
+          directories: ['common/webpack_config'],
           files: ['package.json']
         }
       }),
-      new webpack.HotModuleReplacementPlugin(),
-      new webpack.NoEmitOnErrorsPlugin(),
       new FriendlyErrorsPlugin()
     );
   }
@@ -274,6 +275,17 @@ module.exports = function(opts = {}) {
   }
 
   // ====================
+  // === Optimization ===
+  // ====================
+  const optimization = {};
+  if (options.isProduction) {
+    optimization.splitChunks = {
+      chunks: 'all'
+    };
+    optimization.concatenateModules = false;
+  }
+
+  // ====================
   // ====== DevTool =====
   // ====================
   let devtool = false;
@@ -283,6 +295,8 @@ module.exports = function(opts = {}) {
     } else {
       devtool = 'cheap-module-eval-source-map';
     }
+  } else {
+    devtool = 'cheap-module-source-map';
   }
 
   // ====================
@@ -290,9 +304,11 @@ module.exports = function(opts = {}) {
   // ====================
   const output = {
     path: path.resolve(config.path.output, options.outputDir),
-    filename: options.isProduction ? '[name].[chunkhash:8].js' : '[name].js',
+    filename: options.isProduction ? '[name].[contenthash].js' : '[name].js',
     publicPath: isDownloadable && options.isProduction ? './' : '/',
-    crossOriginLoading: 'anonymous'
+    crossOriginLoading: 'anonymous',
+    // Fix workers & HMR https://github.com/webpack/webpack/issues/6642
+    globalObject: options.isProduction ? undefined : 'self'
   };
 
   // The final bundle
@@ -307,6 +323,8 @@ module.exports = function(opts = {}) {
     performance: {
       hints: options.isProduction ? 'warning' : false
     },
+    optimization,
+    mode: options.isProduction ? 'production' : 'development',
     stats: {
       // Reduce build output
       children: false,
@@ -314,6 +332,13 @@ module.exports = function(opts = {}) {
       chunkModules: false,
       chunkOrigins: false,
       modules: false
-    }
+    },
+    externals: [
+      // This was added because there were build issues with ethers.js
+      // as we included some of the built-in BigNumber and Hex processing functions it provided.
+      {
+        xmlhttprequest: 'XMLHttpRequest'
+      }
+    ]
   };
 };

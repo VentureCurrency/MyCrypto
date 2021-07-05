@@ -1,6 +1,8 @@
 import BN from 'bn.js';
+import { toChecksumAddress as toETHChecksumAddress } from 'ethereumjs-util';
+import { toChecksumAddress as toRSKChecksumAddress } from 'rskjs-util';
 import { Wei } from 'libs/units';
-import { stripHexPrefix } from 'libs/values';
+import { stripHexPrefix } from 'libs/formatters';
 
 export function toFixedIfLarger(num: number, fixedSize: number = 6): string {
   return parseFloat(num.toFixed(fixedSize)).toString();
@@ -113,9 +115,25 @@ export function bytesToHuman(bytes: number) {
 }
 
 export function ensV3Url(name: string) {
-  return `https://mycrypto.com/?ensname=${name}#ens`;
+  return `https://manager.ens.domains/name/${name}`;
 }
 
 export function hexToNumber(hex: string) {
   return new BN(stripHexPrefix(hex)).toNumber();
+}
+
+// Checksumming split into two functions so it's shared by network selector
+export function getChecksumAddressFunction(chainId: number) {
+  if (chainId === 30 || chainId === 31) {
+    return (addr: string) => toRSKChecksumAddress(addr, chainId);
+  }
+  return toETHChecksumAddress;
+}
+
+export function toChecksumAddressByChainId(address: string, chainId: number) {
+  return getChecksumAddressFunction(chainId)(address);
+}
+
+export function hexStringToNumber(str: string): number {
+  return parseInt(str, 16);
 }

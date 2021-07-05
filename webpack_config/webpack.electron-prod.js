@@ -4,7 +4,7 @@ const path = require('path');
 const ClearDistPlugin = require('./plugins/clearDist');
 const DelayPlugin = require('./plugins/delay');
 const makeConfig = require('./makeConfig');
-const electronConfig = require('./webpack.electron-dev.js');
+const electronConfig = require('./electron-main.dev.js');
 
 const jsConfig = makeConfig({
   isProduction: true,
@@ -13,6 +13,8 @@ const jsConfig = makeConfig({
 });
 
 // Redefine plugins with prod specific stuff
+electronConfig.mode = 'production';
+
 electronConfig.plugins = [
   new ClearDistPlugin(),
   new webpack.DefinePlugin({
@@ -20,5 +22,12 @@ electronConfig.plugins = [
   }),
   new DelayPlugin(500)
 ];
+
+// Many native node modules don't like being uglified since they often aren't
+// for most use cases, and this way logging is a lot easier too.
+electronConfig.devtool = undefined;
+electronConfig.optimization = {
+  minimize: false
+};
 
 module.exports = [electronConfig, jsConfig];

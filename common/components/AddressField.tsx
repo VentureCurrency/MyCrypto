@@ -1,30 +1,88 @@
 import React from 'react';
-import { AddressFieldFactory } from './AddressFieldFactory';
+import { connect } from 'react-redux';
+
 import { donationAddressMap } from 'config';
 import translate from 'translations';
+import { AppState } from 'features/reducers';
+import { configSelectors } from 'features/config';
 import { Input } from 'components/ui';
+import { AddressFieldFactory } from './AddressFieldFactory';
 
-interface Props {
+interface OwnProps {
   isReadOnly?: boolean;
+  isSelfAddress?: boolean;
+  isCheckSummed?: boolean;
+  showLabelMatch?: boolean;
+  showIdenticon?: boolean;
+  showInputLabel?: boolean;
+  showEnsResolution?: boolean;
+  placeholder?: string;
+  value?: string;
+  dropdownThreshold?: number;
+  onChangeOverride?(ev: React.FormEvent<HTMLInputElement>): void;
 }
 
-export const AddressField: React.SFC<Props> = ({ isReadOnly }) => (
+interface StateProps {
+  toChecksumAddress: ReturnType<typeof configSelectors.getChecksumAddressFn>;
+}
+
+type Props = OwnProps & StateProps;
+
+const AddressField: React.SFC<Props> = ({
+  isReadOnly,
+  isSelfAddress,
+  isCheckSummed,
+  showLabelMatch,
+  toChecksumAddress,
+  showIdenticon,
+  placeholder = `donate.mycryptoid.eth or ${donationAddressMap.ETH}`,
+  showInputLabel = true,
+  onChangeOverride,
+  value,
+  dropdownThreshold,
+  showEnsResolution = true
+}) => (
   <AddressFieldFactory
-    withProps={({ currentTo, isValid, onChange, readOnly }) => (
+    isSelfAddress={isSelfAddress}
+    showLabelMatch={showLabelMatch}
+    showIdenticon={showIdenticon}
+    showEnsResolution={showEnsResolution}
+    onChangeOverride={onChangeOverride}
+    value={value}
+    dropdownThreshold={dropdownThreshold}
+    withProps={({ currentTo, isValid, isLabelEntry, onChange, onFocus, onBlur, readOnly }) => (
       <div className="input-group-wrapper">
         <label className="input-group">
-          <div className="input-group-header">{translate('SEND_addr')}</div>
+          {showInputLabel && (
+            <div className="input-group-header">
+              {translate(isSelfAddress ? 'X_ADDRESS' : 'SEND_ADDR')}
+            </div>
+          )}
           <Input
-            className={`input-group-input ${isValid ? '' : 'invalid'}`}
+            className={`input-group-input ${!isValid && !isLabelEntry ? 'invalid' : ''}`}
+            isValid={isValid}
             type="text"
-            value={currentTo.raw}
-            placeholder={donationAddressMap.ETH}
+            value={(value != null
+              ? value
+              : isCheckSummed
+              ? toChecksumAddress(currentTo.raw)
+              : currentTo.raw
+            ).trim()}
+            placeholder={placeholder}
             readOnly={!!(isReadOnly || readOnly)}
             spellCheck={false}
-            onChange={onChange}
+            onChange={onChangeOverride || onChange}
+            onFocus={onFocus}
+            onBlur={onBlur}
           />
         </label>
       </div>
     )}
   />
 );
+
+export default connect(
+  (state: AppState): StateProps => ({
+    toChecksumAddress: configSelectors.getChecksumAddressFn(state)
+  })
+)(AddressField);

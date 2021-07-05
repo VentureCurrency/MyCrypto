@@ -1,23 +1,19 @@
 import packageJSON from '../package.json';
 
+interface Dependencies {
+  [key: string]: string;
+}
+
+const dependencies = Object.entries({
+  ...(packageJSON.dependencies as Dependencies),
+  ...(packageJSON.devDependencies as Dependencies)
+});
+
 // from https://docs.npmjs.com/files/package.json#dependencies
-const nonExactPrefixes = ['~', '^', '>', '>=', '<', '<='];
+const nonExactPrefixes = /^(~|\^|>|>=|<|<=)/;
 
 describe('package.json', () => {
-  it('dependencies should not contain any non-exact versions', () => {
-    const deps = Object.values(packageJSON.dependencies);
-    deps.forEach(depVersion => {
-      nonExactPrefixes.forEach(badPrefix => {
-        expect(depVersion.includes(badPrefix)).toBeFalsy();
-      });
-    });
-  });
-  it('devDependencies should not contain any non-exact versions', () => {
-    const deps = Object.values(packageJSON.devDependencies);
-    deps.forEach(depVersion => {
-      nonExactPrefixes.forEach(badPrefix => {
-        expect(depVersion.includes(badPrefix)).toBeFalsy();
-      });
-    });
+  it.each(dependencies)('%s should have an exact version', (_, depVersion) => {
+    expect(depVersion).not.toMatch(nonExactPrefixes);
   });
 });

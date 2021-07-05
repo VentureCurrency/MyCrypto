@@ -1,30 +1,39 @@
 import React from 'react';
-import { GasLimitFieldFactory } from './GasLimitFieldFactory';
+
 import translate from 'translations';
 import { gasLimitValidator } from 'libs/validators';
-import { InlineSpinner } from 'components/ui/InlineSpinner';
-import './GasLimitField.scss';
 import { Input } from 'components/ui';
+import { InlineSpinner } from 'components/ui/InlineSpinner';
+import { GasLimitFieldFactory } from './GasLimitFieldFactory';
+import './GasLimitField.scss';
 
 interface Props {
   customLabel?: string;
   disabled?: boolean;
+  hideGasCalculationSpinner?: boolean;
 }
 
-export const GasLimitField: React.SFC<Props> = ({ customLabel, disabled }) => (
+export const GasLimitField: React.SFC<Props> = ({
+  customLabel,
+  disabled,
+  hideGasCalculationSpinner
+}) => (
   <GasLimitFieldFactory
     withProps={({ gasLimit: { raw }, onChange, readOnly, gasEstimationPending }) => (
-      <div className="input-group-wrapper AdvancedGas-gas-price">
+      <div className="input-group-wrapper">
         <label className="input-group">
           <div className="input-group-header">
-            {customLabel ? customLabel : translate('TRANS_gas')}
+            {customLabel ? customLabel : translate('TRANS_GAS')}
             <div className="flex-spacer" />
-            <InlineSpinner active={gasEstimationPending} text="Calculating" />
+            <InlineSpinner
+              active={!hideGasCalculationSpinner && gasEstimationPending}
+              text="Calculating"
+            />
           </div>
           <Input
-            className={gasLimitValidator(raw) ? 'is-valid' : 'is-invalid'}
+            isValid={gasLimitValidator(raw)}
             type="number"
-            placeholder="e.g. 21000"
+            placeholder="21000"
             readOnly={!!readOnly}
             value={raw}
             onChange={onChange}
